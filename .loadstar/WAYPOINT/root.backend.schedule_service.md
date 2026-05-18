@@ -27,6 +27,9 @@
 - [x] 2026-05-07 WP 정렬 키 산출 — `M://root` 부터 DFS 순회한 등장 순서를 인덱스로 부여. 고아 WP는 맨 뒤로 모음
 - [x] 2026-05-07 log_service 호출 0건 — 로그 미기록 원칙 준수
 - [x] 2026-05-07 schedule.json read/write 외에는 다른 파일에 쓰지 않음 (단방향 read만 허용)
+- [x] 2026-05-18 schedule.json에 selectedMaps 필드(배열) 추가 (기본값: null → 전체)
+- [x] 2026-05-18 PUT /api/schedule — selectedMaps 필드 저장; GET 응답에도 selectedMaps 포함
+- [x] 2026-05-18 mapOrderedWps(root, List<String>) — null/empty면 M://root 전체 DFS, 지정 시 각 MAP별 DFS 후 WP 중복 제거 병합
 - (R) 변경 후 mvn test 실행
 - (R) 변경 후 mvn spring-boot:build로 컴파일 검증
 

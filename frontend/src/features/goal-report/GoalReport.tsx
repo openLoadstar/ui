@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { fetchTree, updateMap, updateWayPoint, fetchWayPoint, addToMap, createSubMap } from '../../api/client';
 import type { TreeNode } from '../../types/loadstar';
+import MapSelectorDialog from '../../components/common/MapSelectorDialog';
 
 interface GoalReportProps {
   projectRoot: string;
@@ -207,11 +208,22 @@ const s = {
   modalBtnRow: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 } as React.CSSProperties,
 };
 
+function findMapNode(nodes: TreeNode[], address: string): TreeNode | null {
+  for (const n of nodes) {
+    if (n.address === address) return n;
+    const found = findMapNode(n.children, address);
+    if (found) return found;
+  }
+  return null;
+}
+
 const GoalReport = ({ projectRoot }: GoalReportProps) => {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openTodos, setOpenTodos] = useState<Set<string>>(new Set());
+  const [selectedMaps, setSelectedMaps] = useState<string[]>([]);
+  const [showMapDialog, setShowMapDialog] = useState(true);
 
   // Edit mode state
   const [editMode, setEditMode] = useState(false);
@@ -255,6 +267,17 @@ const GoalReport = ({ projectRoot }: GoalReportProps) => {
     tree.forEach(visit);
     return map;
   }, [tree]);
+
+  // 선택된 MAP의 서브트리만 표시 (빈 배열 = 전체)
+  const displayNodes = useMemo(() => {
+    if (selectedMaps.length === 0) return tree;
+    const result: TreeNode[] = [];
+    for (const addr of selectedMaps) {
+      const found = findMapNode(tree, addr);
+      if (found) result.push(found);
+    }
+    return result.length > 0 ? result : tree;
+  }, [tree, selectedMaps]);
 
   // All known addresses (tree + pending) for duplicate check
   const allKnownAddresses = useMemo(() => {
@@ -443,7 +466,7 @@ const GoalReport = ({ projectRoot }: GoalReportProps) => {
   };
 
   const downloadMarkdown = () => {
-    const md = treeToMarkdown(tree);
+    const md = treeToMarkdown(displayNodes);
     const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -466,6 +489,15 @@ const GoalReport = ({ projectRoot }: GoalReportProps) => {
 
   return (
     <div className="goal-report-root" style={s.container}>
+      {/* MAP Selector Dialog */}
+      {showMapDialog && (
+        <MapSelectorDialog
+          projectRoot={projectRoot}
+          selectedMaps={selectedMaps}
+          onConfirm={(maps) => { setSelectedMaps(maps); setShowMapDialog(false); }}
+        />
+      )}
+
       {/* Header */}
       <div style={s.header} className="goal-report-no-print">
         <div style={s.titleRow}>
@@ -476,6 +508,9 @@ const GoalReport = ({ projectRoot }: GoalReportProps) => {
           )}
         </div>
         <div style={s.btnRow}>
+          <button style={s.btn} onClick={() => setShowMapDialog(true)}>
+            📁 {selectedMaps.length === 0 ? '전체' : `${selectedMaps.length}개 MAP`}
+          </button>
           {!editMode ? (
             <>
               <button style={s.btn} onClick={enterEditMode}>편집</button>
@@ -495,10 +530,10 @@ const GoalReport = ({ projectRoot }: GoalReportProps) => {
       </div>
 
       {/* Tree */}
-      {tree.length === 0 ? (
+      {displayNodes.length === 0 ? (
         <div style={s.empty}>표시할 요소가 없습니다.</div>
       ) : (
-        tree.map(node => (
+        displayNodes.map(node => (
           <Node
             key={node.address}
             node={node}

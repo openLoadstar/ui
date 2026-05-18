@@ -563,11 +563,13 @@ export interface ScheduleItemResponse {
 export interface ScheduleResponse {
   view: ScheduleViewData;
   items: ScheduleItemResponse[];
+  selectedMaps?: string[] | null;
 }
 
 export interface ScheduleData {
   view: ScheduleViewData;
   items: Record<string, { start: string; end: string; status: string }>;
+  selectedMaps?: string[] | null;
 }
 
 export async function fetchSchedule(root: string): Promise<ScheduleResponse> {

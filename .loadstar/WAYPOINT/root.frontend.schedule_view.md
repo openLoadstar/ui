@@ -33,6 +33,10 @@
 - [x] 2026-05-07 페이지 이탈 시 미저장 변경분 있으면 `beforeunload` 경고
 - [x] 2026-05-07 시간축이 길 때(특히 90일 이상) 일별 grid 라벨을 자동으로 주/월 단위로 추출하여 표기
 - [x] 2026-05-07 다른 모듈(WP STATUS, TODO, LOG, GIT 등)에 변경을 전파하지 않음 — 확인
+- [x] 2026-05-18 MapSelectorDialog 공유 컴포넌트 신설 — 체크박스 multi-select, 전체 선택 버튼, M://root 제외
+- [x] 2026-05-18 Schedule 진입 시 항상 MapSelectorDialog 표시; schedule.json selectedMaps로 pre-populate, 없으면 전체 선택
+- [x] 2026-05-18 MAP 선택 변경 시 기존 items 유지 + 새 MAP WP는 default 날짜로 추가 (변경 없으면 재저장 안 함)
+- [x] 2026-05-18 schedule.json selectedMaps 필드(배열) 저장·복원, autoSave 시 포함
 - (R) 변경 후 npx vite build로 컴파일 검증
 - (R) ESLint 경고 0개 유지
 

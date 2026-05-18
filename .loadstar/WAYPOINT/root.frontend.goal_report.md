@@ -58,6 +58,11 @@
 - [x] 2026-05-11 PDF 인쇄 시 앱 전체 캡처 문제 수정 — `<style>` 인라인 삽입 대신 `useEffect`로 `document.head`에 주입, 인쇄 버튼은 새 창 열기(`window.open`) 방식으로 Goals 내용만 PDF 출력
 - [x] 2026-05-11 `npx vite build` 통과 → dist 갱신 (port 8080 서빙 대응)
 
+# TASK — MAP 필터 (4차)
+- [x] 2026-05-18 MapSelectorDialog 공유 컴포넌트 사용 — Goals 진입 시 MAP 선택 팝업
+- [x] 2026-05-18 선택된 MAP 기준으로 트리 노드 필터링 (fetchTree 결과에서 클라이언트 필터)
+- [x] 2026-05-18 MAP 변경 버튼 상단 노출, 변경 시 필터 초기화 후 재표시
+
 # RECURRING
 - (R) 변경 후 mvn test 또는 spring-boot:run 기동 확인
 - (R) 변경 후 npx vite build로 컴파일 검증

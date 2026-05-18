@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchSchedule, saveSchedule, refreshScheduleStatus } from '../../api/client';
-import type { ScheduleItemResponse, ScheduleViewData } from '../../api/client';
+import type { ScheduleItemResponse, ScheduleViewData, ScheduleData } from '../../api/client';
+import MapSelectorDialog from '../../components/common/MapSelectorDialog';
 
 // ===== Date helpers (UTC-safe) =====
 
@@ -90,13 +91,15 @@ export default function ScheduleView({ projectRoot }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [startDateInput, setStartDateInput] = useState(view.startDate);
   const [durationInput, setDurationInput] = useState(String(view.durationDays));
+  const [selectedMaps, setSelectedMaps] = useState<string[]>([]);
+  const [showMapDialog, setShowMapDialog] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
   const latestItemsRef = useRef<ScheduleItemResponse[]>([]);
 
   // Keep ref in sync so drag onUp always sees the latest items
   useEffect(() => { latestItemsRef.current = items; }, [items]);
 
-  // Initial load
+  // Initial load — 항상 MAP 다이얼로그 표시 (schedule.json에 저장된 선택값 pre-populate)
   useEffect(() => {
     if (!projectRoot) return;
     setLoading(true);
@@ -106,18 +109,53 @@ export default function ScheduleView({ projectRoot }: Props) {
         setItems(data.items);
         setStartDateInput(data.view.startDate);
         setDurationInput(String(data.view.durationDays));
+        setSelectedMaps(data.selectedMaps ?? []);
       })
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setShowMapDialog(true);
+      });
   }, [projectRoot]);
+
+  const handleMapsConfirm = useCallback(async (newMaps: string[]) => {
+    setShowMapDialog(false);
+
+    // 선택이 바뀌지 않으면 현재 데이터 그대로 사용
+    const prevSet = new Set(selectedMaps);
+    const sameSelection =
+      newMaps.length === prevSet.size && newMaps.every(m => prevSet.has(m));
+    if (sameSelection) return;
+
+    setSelectedMaps(newMaps);
+    setLoading(true);
+    try {
+      // 기존 items 유지 + 새 MAP 선택 적용 (backend에서 새 MAP WP는 default 날짜로 추가)
+      const body: ScheduleData = {
+        view,
+        items: Object.fromEntries(items.map(it => [it.address, { start: it.start, end: it.end, status: it.status ?? 'ACTIVE' }])),
+        selectedMaps: newMaps,
+      };
+      const data = await saveSchedule(projectRoot, body);
+      setView(data.view);
+      setItems(data.items);
+      setStartDateInput(data.view.startDate);
+      setDurationInput(String(data.view.durationDays));
+    } catch (e) {
+      console.error('MAP change failed', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [projectRoot, view, items, selectedMaps]);
 
   // Auto-save: server handles all date adjustment, UI refreshes from response
   const autoSave = useCallback(async (newView: ScheduleViewData, currentItems: ScheduleItemResponse[]) => {
     setSaving(true);
     try {
-      const body = {
+      const body: ScheduleData = {
         view: newView,
         items: Object.fromEntries(currentItems.map(it => [it.address, { start: it.start, end: it.end, status: it.status ?? 'ACTIVE' }])),
+        selectedMaps,
       };
       const updated = await saveSchedule(projectRoot, body);
       setItems(updated.items);
@@ -129,7 +167,7 @@ export default function ScheduleView({ projectRoot }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [projectRoot]);
+  }, [projectRoot, selectedMaps]);
 
   // Drag mousemove / mouseup — local preview, auto-save on release
   useEffect(() => {
@@ -218,8 +256,22 @@ export default function ScheduleView({ projectRoot }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', overflow: 'hidden', userSelect: dragState ? 'none' : undefined }}>
 
+      {/* ── MAP Selector Dialog ── */}
+      {showMapDialog && (
+        <MapSelectorDialog
+          projectRoot={projectRoot}
+          selectedMaps={selectedMaps}
+          onConfirm={handleMapsConfirm}
+        />
+      )}
+
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderBottom: '1px solid var(--border-light)', flexShrink: 0, flexWrap: 'wrap' }}>
+        <button
+          onClick={() => setShowMapDialog(true)}
+          style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-primary)', cursor: 'pointer' }}
+        >📁 {selectedMaps.length === 0 ? '전체' : `${selectedMaps.length}개 MAP`}</button>
+        <span style={{ color: 'var(--border-light)' }}>|</span>
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>시작일</span>
         <input
           type="date" value={startDateInput}
@@ -323,21 +375,39 @@ export default function ScheduleView({ projectRoot }: Props) {
               const inView = item.end >= view.startDate && item.start <= addDays(view.startDate, view.durationDays);
               const isDraggingThis = dragState?.address === item.address;
               const activeBgStyle = isDraggingThis ? dragState!.originalBgStyle : barBgStyle(item);
+
+              // bar 픽셀 너비 계산 → 80px 미만이면 우측 바깥에 레이블 표시
+              const bsDay = Math.max(0, diffDays(view.startDate, item.start));
+              const beDay = Math.min(view.durationDays, diffDays(view.startDate, item.end) + 1);
+              const bwPx = (Math.max(0, beDay - bsDay) / view.durationDays) * (chartRef.current?.getBoundingClientRect().width ?? 600);
+              const labelInside = bwPx >= 80;
+              const dateLabel = `${item.start.slice(5).replace('-', '.')}→${item.end.slice(5).replace('-', '.')}`;
+              const barRightPct = `${(Math.max(0, beDay) / view.durationDays) * 100}%`;
+
               return (
                 <div key={item.address} style={{ height: ROW_HEIGHT, position: 'relative', borderBottom: '1px solid var(--border-light)' }}>
                   {inView && (
-                    <div
-                      style={{ position: 'absolute', left: barLeft(item.start), width: barWidth(item.start, item.end), top: 5, height: ROW_HEIGHT - 10, ...activeBgStyle, borderRadius: 3, cursor: item.exists && !item.recurringOnly ? 'grab' : 'default', zIndex: 1, display: 'flex', alignItems: 'center', opacity: item.exists ? 1 : 0.75 }}
-                      onMouseDown={item.exists && !item.recurringOnly ? (e) => startDrag(e, item, 'move') : undefined}
-                    >
-                      {item.exists && !item.recurringOnly && <>
-                        <div style={{ position: 'absolute', left: 0, top: 0, width: HANDLE_W, height: '100%', cursor: 'ew-resize', zIndex: 2 }} onMouseDown={e => startDrag(e, item, 'start')} />
-                        <div style={{ position: 'absolute', right: 0, top: 0, width: HANDLE_W, height: '100%', cursor: 'ew-resize', zIndex: 2 }} onMouseDown={e => startDrag(e, item, 'end')} />
-                      </>}
-                      <span style={{ fontSize: 10, color: '#fff', paddingLeft: HANDLE_W + 2, paddingRight: HANDLE_W + 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
-                        {item.start.slice(5).replace('-', '.')}→{item.end.slice(5).replace('-', '.')}
-                      </span>
-                    </div>
+                    <>
+                      <div
+                        style={{ position: 'absolute', left: barLeft(item.start), width: barWidth(item.start, item.end), top: 5, height: ROW_HEIGHT - 10, ...activeBgStyle, borderRadius: 3, cursor: item.exists && !item.recurringOnly ? 'grab' : 'default', zIndex: 1, display: 'flex', alignItems: 'center', opacity: item.exists ? 1 : 0.75 }}
+                        onMouseDown={item.exists && !item.recurringOnly ? (e) => startDrag(e, item, 'move') : undefined}
+                      >
+                        {item.exists && !item.recurringOnly && <>
+                          <div style={{ position: 'absolute', left: 0, top: 0, width: HANDLE_W, height: '100%', cursor: 'ew-resize', zIndex: 2 }} onMouseDown={e => startDrag(e, item, 'start')} />
+                          <div style={{ position: 'absolute', right: 0, top: 0, width: HANDLE_W, height: '100%', cursor: 'ew-resize', zIndex: 2 }} onMouseDown={e => startDrag(e, item, 'end')} />
+                        </>}
+                        {labelInside && (
+                          <span style={{ fontSize: 10, color: '#fff', paddingLeft: HANDLE_W + 2, paddingRight: HANDLE_W + 2, overflow: 'hidden', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+                            {dateLabel}
+                          </span>
+                        )}
+                      </div>
+                      {!labelInside && (
+                        <span style={{ position: 'absolute', left: barRightPct, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', pointerEvents: 'none', paddingLeft: 4, zIndex: 2 }}>
+                          {dateLabel}
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               );

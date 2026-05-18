@@ -44,12 +44,23 @@ public class ScheduleService {
 
     // ===== MAP DFS order =====
 
-    private List<String> mapOrderedWps(String projectRoot) {
+    private List<String> mapOrderedWps(String projectRoot, List<String> mapAddresses) {
+        List<String> starts = (mapAddresses == null || mapAddresses.isEmpty())
+                ? List.of("M://root")
+                : mapAddresses;
         List<String> result = new ArrayList<>();
-        try {
-            collectWps(projectRoot, "M://root", result, new HashSet<>());
-        } catch (Exception e) {
-            log.warn("MAP DFS 순회 실패", e);
+        Set<String> visitedMaps = new HashSet<>();
+        Set<String> seenWps = new HashSet<>();
+        for (String start : starts) {
+            try {
+                List<String> batch = new ArrayList<>();
+                collectWps(projectRoot, start, batch, visitedMaps);
+                for (String wp : batch) {
+                    if (seenWps.add(wp)) result.add(wp);
+                }
+            } catch (Exception e) {
+                log.warn("MAP DFS 순회 실패: {}", start, e);
+            }
         }
         return result;
     }
@@ -142,7 +153,7 @@ public class ScheduleService {
 
     public ScheduleResponse refreshStatus(String projectRoot) throws IOException {
         ScheduleData data = loadOrCreate(projectRoot);
-        List<String> ordered = mapOrderedWps(projectRoot);
+        List<String> ordered = mapOrderedWps(projectRoot, data.getSelectedMaps());
         Map<String, ScheduleEntry> stored = data.getItems() != null ? data.getItems() : new LinkedHashMap<>();
         Map<String, ScheduleEntry> updated = new LinkedHashMap<>();
         String today = LocalDate.now().format(DATE_FMT);
@@ -192,7 +203,7 @@ public class ScheduleService {
     }
 
     private ScheduleResponse buildResponse(String projectRoot, ScheduleData data) {
-        List<String> ordered = mapOrderedWps(projectRoot);
+        List<String> ordered = mapOrderedWps(projectRoot, data.getSelectedMaps());
         Map<String, ScheduleEntry> stored = data.getItems() != null ? data.getItems() : new LinkedHashMap<>();
 
         ScheduleView view = data.getView() != null ? data.getView() : new ScheduleView(LocalDate.now().format(DATE_FMT), 30);
@@ -212,17 +223,21 @@ public class ScheduleService {
             items.add(toResponse(addr, meta, entry, i, viewStart, viewEnd, today, defaultEnd));
         }
 
-        // Orphan entries (in schedule.json but not found via MAP DFS)
-        int orphanOrder = ordered.size();
-        for (Map.Entry<String, ScheduleEntry> e : stored.entrySet()) {
-            if (processed.contains(e.getKey())) continue;
-            WpMeta meta = readWpMeta(projectRoot, e.getKey());
-            items.add(toResponse(e.getKey(), meta, e.getValue(), orphanOrder++, viewStart, viewEnd, today, defaultEnd));
+        // MAP 필터 비활성 시에만 orphan 표시 (필터 활성이면 다른 MAP WP가 orphan으로 노출되는 문제 방지)
+        boolean hasMapFilter = data.getSelectedMaps() != null && !data.getSelectedMaps().isEmpty();
+        if (!hasMapFilter) {
+            int orphanOrder = ordered.size();
+            for (Map.Entry<String, ScheduleEntry> e : stored.entrySet()) {
+                if (processed.contains(e.getKey())) continue;
+                WpMeta meta = readWpMeta(projectRoot, e.getKey());
+                items.add(toResponse(e.getKey(), meta, e.getValue(), orphanOrder++, viewStart, viewEnd, today, defaultEnd));
+            }
         }
 
         ScheduleResponse resp = new ScheduleResponse();
         resp.setView(view);
         resp.setItems(items);
+        resp.setSelectedMaps(data.getSelectedMaps());
         return resp;
     }
 
@@ -288,6 +303,8 @@ public class ScheduleService {
     public static class ScheduleData {
         private ScheduleView view;
         private Map<String, ScheduleEntry> items = new LinkedHashMap<>();
+        @JsonProperty("selectedMaps")
+        private List<String> selectedMaps;
     }
 
     @Data
@@ -307,6 +324,8 @@ public class ScheduleService {
     public static class ScheduleResponse {
         private ScheduleView view;
         private List<ScheduleItemResponse> items;
+        @JsonProperty("selectedMaps")
+        private List<String> selectedMaps;
     }
 
     private record WpMeta(boolean exists, String summary, boolean completed, boolean recurringOnly) {}
