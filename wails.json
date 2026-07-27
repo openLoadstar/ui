@@ -1,0 +1,13 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "loadstar_ui",
+  "outputfilename": "wails_loadstar_ui",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "aeolusk",
+    "email": "13114442+aeolusk@users.noreply.github.com"
+  }
+}

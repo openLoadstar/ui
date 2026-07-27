@@ -1,0 +1,173 @@
+:root {
+    color-scheme: light dark;
+    --bg: #1b2636;
+    --panel: #202b3d;
+    --border: #2f3d54;
+    --text: #e6e9ef;
+    --text-dim: #9aa5b8;
+    --accent: #4a8cff;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    height: 100%;
+    font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+}
+
+#app, #layout {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+#menubar {
+    display: flex;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+}
+
+.menu-item {
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.menu-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+#toolbar {
+    display: flex;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+}
+
+.tb-btn {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.tb-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--accent);
+}
+
+#main {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+#tree-panel {
+    width: 260px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 6px 0;
+}
+
+.tree-list {
+    list-style: none;
+    margin: 0;
+    padding-left: 0;
+}
+
+.tree-list--nested {
+    padding-left: 16px;
+}
+
+.tree-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.tree-row:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.tree-icon {
+    font-size: 12px;
+}
+
+.tree-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#content-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+#tab-bar {
+    display: flex;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+}
+
+.tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-right: 1px solid var(--border);
+    cursor: pointer;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.tab--active {
+    color: var(--text);
+    background: var(--bg);
+    border-bottom: 2px solid var(--accent);
+}
+
+.tab-close {
+    opacity: 0.6;
+}
+
+.tab-close:hover {
+    opacity: 1;
+}
+
+#tab-content {
+    flex: 1;
+    overflow: auto;
+    padding: 20px;
+}
+
+.viewer-empty, .viewer-placeholder {
+    color: var(--text-dim);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 8px;
+    text-align: center;
+}
