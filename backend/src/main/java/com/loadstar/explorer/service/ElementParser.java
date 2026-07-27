@@ -90,9 +90,24 @@ public class ElementParser {
 
         String currentSection = "";
         StringBuilder goalBuilder = new StringBuilder();
+        String collectingListFor = null; // "children" or "references" (멀티라인 연속 수집)
 
         for (String line : lines) {
             String trimmed = line.trim();
+
+            // 멀티라인 CHILDREN/REFERENCE 항목 수집 ("  - W://..." 형식)
+            if (collectingListFor != null) {
+                if (line.startsWith("  ") && trimmed.startsWith("- ")) {
+                    String addr = stripListComment(trimmed.substring(2).trim());
+                    if (addr.contains("://")) {
+                        if ("children".equals(collectingListFor)) wp.getChildren().add(addr);
+                        else wp.getReferences().add(addr);
+                    }
+                    continue;
+                } else if (!trimmed.isEmpty()) {
+                    collectingListFor = null;
+                }
+            }
 
             Matcher addrMatch = ADDRESS_PATTERN.matcher(trimmed);
             if (addrMatch.matches()) {
@@ -128,13 +143,17 @@ public class ElementParser {
 
             if (trimmed.startsWith("- CHILDREN:")) {
                 String val = trimmed.substring("- CHILDREN:".length()).trim();
-                wp.setChildren(parseAddressList(val));
+                List<String> inline = parseAddressList(val);
+                if (!inline.isEmpty()) wp.setChildren(inline);
+                else collectingListFor = "children";
                 continue;
             }
 
             if (trimmed.startsWith("- REFERENCE:")) {
                 String val = trimmed.substring("- REFERENCE:".length()).trim();
-                wp.setReferences(parseAddressList(val));
+                List<String> inline = parseAddressList(val);
+                if (!inline.isEmpty()) wp.setReferences(inline);
+                else collectingListFor = "references";
                 continue;
             }
 
@@ -189,9 +208,24 @@ public class ElementParser {
         StringBuilder goalBuilder = new StringBuilder();
         boolean inComment = false;
         WayPointDetailResponse.TableEntry currentTable = null;
+        String collectingListFor = null; // "children" or "references" (멀티라인 연속 수집)
 
         for (String line : lines) {
             String trimmed = line.trim();
+
+            // 멀티라인 CHILDREN/REFERENCE 항목 수집 ("  - W://..." 형식)
+            if (collectingListFor != null) {
+                if (line.startsWith("  ") && trimmed.startsWith("- ")) {
+                    String addr = stripListComment(trimmed.substring(2).trim());
+                    if (addr.contains("://")) {
+                        if ("children".equals(collectingListFor)) wp.getChildren().add(addr);
+                        else wp.getReferences().add(addr);
+                    }
+                    continue;
+                } else if (!trimmed.isEmpty()) {
+                    collectingListFor = null;
+                }
+            }
 
             Matcher addrMatch = ADDRESS_PATTERN.matcher(trimmed);
             if (addrMatch.matches()) {
@@ -253,27 +287,29 @@ public class ElementParser {
                 continue;
             }
             if (trimmed.startsWith("- CHILDREN:")) {
-                wp.setChildren(parseAddressList(trimmed.substring("- CHILDREN:".length()).trim()));
+                String val = trimmed.substring("- CHILDREN:".length()).trim();
+                List<String> inline = parseAddressList(val);
+                if (!inline.isEmpty()) wp.setChildren(inline);
+                else collectingListFor = "children";
                 continue;
             }
             if (trimmed.startsWith("- REFERENCE:")) {
-                wp.setReferences(parseAddressList(trimmed.substring("- REFERENCE:".length()).trim()));
+                String val = trimmed.substring("- REFERENCE:".length()).trim();
+                List<String> inline = parseAddressList(val);
+                if (!inline.isEmpty()) wp.setReferences(inline);
+                else collectingListFor = "references";
                 continue;
             }
-            // TABLES section (DWP)
-            if (currentSection.contains("TABLES") && trimmed.startsWith("- ") && !trimmed.equals("(없음)")) {
-                if (!line.startsWith("  ") && !line.startsWith("\t")) {
-                    // Table header: "- 테이블명:"
-                    String tableName = trimmed.substring(2).trim();
-                    if (tableName.endsWith(":")) tableName = tableName.substring(0, tableName.length() - 1).trim();
+            // TABLES section (DWP) — 전체를 raw 텍스트로 단일 TableEntry에 저장
+            if (currentSection.contains("TABLES")) {
+                if (trimmed.equals("(없음)")) continue;
+                if (currentTable == null) {
                     currentTable = new WayPointDetailResponse.TableEntry();
-                    currentTable.setName(tableName);
+                    currentTable.setName("__raw__");
                     currentTable.setItems(new ArrayList<>());
                     wp.getTables().add(currentTable);
-                } else if (currentTable != null) {
-                    // Table item: "  - 요소" or "  - 요소: 설명"
-                    currentTable.getItems().add(trimmed.substring(2).trim());
                 }
+                currentTable.getItems().add(line);
                 continue;
             }
 
@@ -383,6 +419,13 @@ public class ElementParser {
         String goal = goalBuilder.toString().trim();
         if (!goal.isEmpty()) wp.setGoal(goal);
         return wp;
+    }
+
+    // "W://addr ← 설명" 형식에서 주소 부분만 추출
+    private String stripListComment(String text) {
+        int i = text.indexOf('←');
+        if (i > 0) text = text.substring(0, i).trim();
+        return text;
     }
 
     private List<String> parseAddressList(String value) {

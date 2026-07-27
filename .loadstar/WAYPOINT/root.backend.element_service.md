@@ -13,7 +13,8 @@
 - REFERENCE: [W://root/backend/cli_service]
 
 ### TODO
-(없음)
+# TASK
+- [x] 2026-05-25 ElementParser: CHILDREN/REFERENCE 멀티라인 포맷 파싱 지원 (parseWayPoint + parseWayPointDetail)
 
 ### ISSUE
 (없음)

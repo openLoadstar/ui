@@ -67,17 +67,22 @@ public class GitService {
 
     /**
      * Get file content at a specific commit hash.
-     * Uses: git show {hash}:{relativePath}
+     * Uses: git show {hash}:{repoRelativePath}
+     * Supports projectRoot == repo root and projectRoot == subdirectory of repo root.
      */
     public String getFileAtCommit(String projectRoot, String address, String hash) {
         Path filePath = addressToRelativePath(address);
         String gitPath = filePath.toString().replace("\\", "/");
 
         try {
+            String repoRoot = getGitRepoRoot(projectRoot);
+            String prefix = getSubdirPrefix(repoRoot, projectRoot);
+            String repoRelativePath = prefix.isEmpty() ? gitPath : prefix + "/" + gitPath;
+
             ProcessBuilder pb = new ProcessBuilder(
-                    "git", "show", hash + ":" + gitPath
+                    "git", "show", hash + ":" + repoRelativePath
             );
-            pb.directory(new File(projectRoot));
+            pb.directory(new File(repoRoot));
             pb.redirectErrorStream(true);
 
             Process process = pb.start();
@@ -155,11 +160,15 @@ public class GitService {
         detail.setFiles(new ArrayList<>());
 
         try {
+            String repoRoot = getGitRepoRoot(projectRoot);
+            String prefix = getSubdirPrefix(repoRoot, projectRoot);
+            String loadstarFilter = prefix.isEmpty() ? ".loadstar/" : prefix + "/.loadstar/";
+
             // Get commit message and meta
             ProcessBuilder pb1 = new ProcessBuilder(
                     "git", "show", "--no-patch", "--pretty=format:%ai|%an|%s", hash
             );
-            pb1.directory(new File(projectRoot));
+            pb1.directory(new File(repoRoot));
             pb1.redirectErrorStream(true);
             Process p1 = pb1.start();
             try (BufferedReader reader = new BufferedReader(
@@ -178,9 +187,9 @@ public class GitService {
 
             // Get changed files (stat)
             ProcessBuilder pb2 = new ProcessBuilder(
-                    "git", "diff-tree", "--no-commit-id", "-r", "--name-status", hash, "--", ".loadstar/"
+                    "git", "diff-tree", "--no-commit-id", "-r", "--name-status", hash, "--", loadstarFilter
             );
-            pb2.directory(new File(projectRoot));
+            pb2.directory(new File(repoRoot));
             pb2.redirectErrorStream(true);
             Process p2 = pb2.start();
             try (BufferedReader reader = new BufferedReader(
@@ -202,6 +211,40 @@ public class GitService {
             log.error("Failed to get commit detail for {}: {}", hash, e.getMessage());
         }
         return detail;
+    }
+
+    /**
+     * Returns the git repository root for the given directory.
+     * Works whether dir is the repo root or a subdirectory within it.
+     */
+    private String getGitRepoRoot(String dir) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder("git", "rev-parse", "--show-toplevel");
+        pb.directory(new File(dir));
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        String output;
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            output = reader.readLine();
+        }
+        process.waitFor(10, TimeUnit.SECONDS);
+        if (process.exitValue() != 0 || output == null || output.isBlank()) {
+            throw new RuntimeException("Not a git repository: " + dir);
+        }
+        return output.trim();
+    }
+
+    /**
+     * Returns the relative path prefix from repoRoot to projectRoot.
+     * Returns "" when they are the same directory, "subdir" when projectRoot = repoRoot/subdir.
+     */
+    private String getSubdirPrefix(String repoRoot, String projectRoot) {
+        Path repoPath    = Paths.get(repoRoot).toAbsolutePath().normalize();
+        Path projectPath = Paths.get(projectRoot).toAbsolutePath().normalize();
+        if (repoPath.equals(projectPath)) {
+            return "";
+        }
+        return repoPath.relativize(projectPath).toString().replace("\\", "/");
     }
 
     /**

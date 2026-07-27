@@ -478,11 +478,19 @@ export default function DataWayPointEditor({ projectRoot, address, onOpenTab }: 
             <div>
               {tables.map((table, ti) => (
                 <div key={ti} style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 3 }}>{table.name}</div>
-                  {table.items.map((item, ii) => (
-                    <div key={ii} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '1px 0 1px 12px' }}>{item}</div>
-                  ))}
-                  {table.items.length === 0 && <div style={{ ...s.empty, paddingLeft: 12 }}>항목 없음</div>}
+                  {table.name === '__raw__' ? (
+                    <pre style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'inherit' }}>
+                      {table.items.join('\n')}
+                    </pre>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 3 }}>{table.name}</div>
+                      {table.items.map((item, ii) => (
+                        <div key={ii} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '1px 0 1px 12px' }}>{item}</div>
+                      ))}
+                      {table.items.length === 0 && <div style={{ ...s.empty, paddingLeft: 12 }}>항목 없음</div>}
+                    </>
+                  )}
                 </div>
               ))}
             </div>
