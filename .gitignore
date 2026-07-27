@@ -15,3 +15,6 @@
 
 # Logs
 *.log
+
+# Extractor cache — regenerable from .loadstar/WP, .loadstar/DWP via the extractor
+/.loadstar/.cache/
