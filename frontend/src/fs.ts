@@ -16,6 +16,7 @@ import {
     GetRecentProjects as goGetRecentProjects,
     ListFormatFiles as goListFormatFiles,
     DeleteFile as goDeleteFile,
+    CreateElement as goCreateElement,
 } from "../wailsjs/go/main/App";
 import type { main } from "../wailsjs/go/models";
 // 개발 중 브라우저 미리보기 전용 — 실제 WP 파일을 그대로 읽어와 목업으로 쓴다(내용 중복 없음).
@@ -159,6 +160,37 @@ export async function listFormatFiles(format: string): Promise<string[]> {
         return goListFormatFiles(format);
     }
     return mockDirListing[format] ?? [];
+}
+
+// 브라우저 미리보기 전용 — 실제 스캐폴딩 내용은 Go 쪽(app.go: CreateElement,
+// cli.go: createElement/scaffoldContent)이 유일한 출처. GUI/CLI가 같은 로직을
+// 공유하게 하려고 일부러 프론트엔드엔 진짜 스캐폴딩을 다시 만들지 않았다 —
+// 여기 건 미리보기 화면에 뭔가 보여주기 위한 목업일 뿐이다.
+const mockScaffoldByFormat: Record<string, (name: string) => string> = {
+    WP: (name) => `## [STATUS] S_IDL\n\n### IDENTITY\n- SUMMARY: ${name}\n\n### CONNECTIONS\n- CHILDREN: []\n- REFERENCE: []\n\n### TODO\n# TASK\n- [ ] \n`,
+    DWP: (name) => `### IDENTITY\n- SUMMARY: ${name}\n\n### CONNECTIONS\n- REFERENCE: []\n`,
+};
+
+function formatDateYYYYMMDD(d: Date): string {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
+}
+
+/** WP/DWP 파일을 스캐폴딩해서 생성하고 project-relative 경로를 반환한다. */
+export async function createElement(format: string, name: string): Promise<string> {
+    if (isWailsRuntimeAvailable()) {
+        return goCreateElement(format, name);
+    }
+    const upper = format.toUpperCase();
+    const filename = `[${upper}][2.0][${formatDateYYYYMMDD(new Date())}]${name}.md`;
+    const path = `.loadstar/${upper}/${filename}`;
+    const listing = mockDirListing[upper];
+    if (listing?.includes(path)) {
+        throw new Error(`이미 같은 이름의 ${upper}가 있습니다: ${filename}`);
+    }
+    mockStore[path] = mockScaffoldByFormat[upper]?.(name) ?? "";
+    listing?.push(path);
+    return path;
 }
 
 /** project-relative 경로의 파일을 삭제한다. 되돌릴 수 없다. */

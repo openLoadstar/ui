@@ -21,7 +21,8 @@
 - [ ] `wails init`으로 프로젝트 초기화, Go 모듈/webview 기본 셸 구성
 - [x] 메뉴바 — 파일 > 탐색(외부 .md 파일 열기), 파일 > 프로젝트 열기
 - [ ] 메뉴바 — 편집/보기 메뉴 (현재 플레이스홀더)
-- [ ] 툴바 — 자주 쓰는 액션(새 WP/DWP/GROUP 생성, reindex 등)
+- [x] 2026-08-04 툴바 — 새 WP/DWP 생성(이름만 입력 → 부록 스캐폴딩으로 즉시 파일 생성 → 편집 모드로 탭 오픈, GROUP 생성은 그룹 편집기의 "+ GROUP"이 이미 담당). `App.CreateElement`(`app.go`)가 `loadstar create` CLI 서브커맨드(`cli.go: createElement`)와 스캐폴딩/동명충돌 로직을 공유. reindex 버튼은 구조 추출기 WP 대기 중이라 범위 밖
+- [x] 2026-08-04 방금 생성한 WP/DWP 탭을 편집 없이 닫으면(×) 저장 확인 대신 "삭제하고 닫을까요?" 확인 — 실수로 만든 빈 스캐폴딩 파일이 프로젝트에 계속 남는 것을 방지. 저장을 한 번이라도 하면 일반 탭과 동일하게 취급(`Tab.pendingCreation`, `tabs.ts`)
 - [x] 좌측 트리 — GROUP.ITEMS를 재귀 조회해 그룹 계층 렌더링 (`frontend/src/projectTree.ts` — 구조 추출기의 SQLite 대신, 매번 `.loadstar/GROUP` 전체를 읽어 즉석 구성하는 임시 대역. `04.META_EXTRACTION.md §6.2`의 `GROUP_ITEM` 엣지 조회는 구조 추출기 완료 후 이 경로를 대체)
 - [x] 좌측 트리 — 어떤 GROUP에도 속하지 않은 WP/DWP/OTHER는 별도 섹션 없이 트리 루트에 그대로 표시 (`appendix/GROUP.md`에 명시된 트레이드오프 대응)
 - [ ] 탭 관리 — 파일 열기/닫기/전환, 탭 하나당 뷰어 인스턴스 하나

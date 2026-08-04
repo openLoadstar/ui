@@ -8,6 +8,8 @@ export function BrowseFile():Promise<string>;
 
 export function BrowseProjectFolder():Promise<string>;
 
+export function CreateElement(arg1:string,arg2:string):Promise<string>;
+
 export function DeleteFile(arg1:string):Promise<void>;
 
 export function GetDefaultBrowseDir():Promise<string>;

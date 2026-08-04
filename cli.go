@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -233,15 +234,32 @@ func cmdCreate(args []string) int {
 		return 1
 	}
 	name := strings.TrimSpace(strings.Join(args[1:], " "))
-	if name == "" {
-		fmt.Fprintln(os.Stderr, "이름이 비어 있습니다.")
-		return 1
-	}
 
 	root, err := findProjectRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+
+	relPath, err := createElement(root, format, name)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	fmt.Printf("생성됨: %s\n", relPath)
+	return 0
+}
+
+// createElement scaffolds a new WP/DWP/GROUP file under root/.loadstar/<format>/
+// and returns its project-relative path (forward slashes, matching
+// ReadFile/WriteFile's convention). format must already be normalized
+// (elementFormats value — "WP"/"DWP"/"GROUP"). Shared by cmdCreate and
+// App.CreateElement(app.go) so CLI and GUI creation never drift apart.
+func createElement(root, format, name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", errors.New("이름이 비어 있습니다")
 	}
 
 	dir := filepath.Join(root, ".loadstar", format)
@@ -251,21 +269,17 @@ func cmdCreate(args []string) int {
 	// 동명 충돌 확인(`02.ELEMENT_FORMAT.md` §5) — frontend groupEditor.ts의
 	// "+ GROUP" 생성과 동일하게 완성된 파일명 기준으로 검사한다.
 	if _, err := os.Stat(full); err == nil {
-		fmt.Fprintf(os.Stderr, "이미 같은 이름의 %s가 있습니다: %s\n", format, filename)
-		return 1
+		return "", fmt.Errorf("이미 같은 이름의 %s가 있습니다: %s", format, filename)
 	}
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "디렉토리 생성 실패: %v\n", err)
-		return 1
+		return "", fmt.Errorf("디렉토리 생성 실패: %w", err)
 	}
 	if err := os.WriteFile(full, []byte(scaffoldContent(format)), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "파일 생성 실패: %v\n", err)
-		return 1
+		return "", fmt.Errorf("파일 생성 실패: %w", err)
 	}
 
-	fmt.Printf("생성됨: .loadstar/%s/%s\n", format, filename)
-	return 0
+	return path.Join(".loadstar", format, filename), nil
 }
 
 // scaffoldContent returns the minimal valid body for a freshly created

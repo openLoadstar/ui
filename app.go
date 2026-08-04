@@ -415,3 +415,24 @@ func (a *App) ListFormatFiles(format string) ([]string, error) {
 	}
 	return files, nil
 }
+
+// CreateElement scaffolds a new WP/DWP/GROUP file in the open project and
+// returns its project-relative path. Shares the actual scaffolding/
+// collision-check logic with `loadstar create` (cli.go: createElement) so
+// the GUI's "+ WP"/"+ DWP"/"+ GROUP" buttons and the CLI never drift apart.
+func (a *App) CreateElement(format, name string) (string, error) {
+	if a.projectRoot == "" {
+		return "", errors.New("열려 있는 프로젝트가 없습니다")
+	}
+	normalized, ok := elementFormats[strings.ToLower(format)]
+	if !ok {
+		return "", fmt.Errorf("알 수 없는 FORMAT: %s", format)
+	}
+	relPath, err := createElement(a.projectRoot, normalized, name)
+	if err != nil {
+		log.Printf("CreateElement: %v", err)
+		return "", err
+	}
+	log.Printf("CreateElement: ok %q", relPath)
+	return relPath, nil
+}

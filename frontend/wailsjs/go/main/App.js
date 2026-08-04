@@ -14,6 +14,10 @@ export function BrowseProjectFolder() {
   return window['go']['main']['App']['BrowseProjectFolder']();
 }
 
+export function CreateElement(arg1, arg2) {
+  return window['go']['main']['App']['CreateElement'](arg1, arg2);
+}
+
 export function DeleteFile(arg1) {
   return window['go']['main']['App']['DeleteFile'](arg1);
 }

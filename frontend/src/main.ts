@@ -7,6 +7,7 @@ import { logInfo, logError } from "./log";
 import { openBrowseModal } from "./browseModal";
 import { renderProjectPickerScreen, openProjectPickerModal } from "./projectPicker";
 import { openGroupEditor } from "./groupEditor";
+import { createElement } from "./fs";
 import { STATUS_ORDER, STATUS_LABELS, STATUS_COLORS, type StatusBucket } from "./wpStatus";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -67,7 +68,7 @@ function startExplorer(projectRoot: string): void {
 
     initSplitter(splitter, treePanel, { min: 260, max: 640 }); // 260px = 트리 패널 초기 폭(style.css #tree-panel)
 
-    const tabs = new TabManager(tabBar, tabContent);
+    const tabs = new TabManager(tabBar, tabContent, () => void refreshTreeAndTimestamp());
 
     function markUpdated(): void {
         const now = new Date();
@@ -133,7 +134,37 @@ function startExplorer(projectRoot: string): void {
         })();
     });
 
+    /**
+     * "+ WP"/"+ DWP" — 이름만 물어보고 스캐폴딩된 파일을 바로 생성(그룹 편집기의
+     * "+ GROUP"과 동일한 패턴)한 뒤, 편집 모드로 탭을 열어 SUMMARY/GOAL/TODO를
+     * 채우게 한다. pendingCreation 탭이라 닫기(×)를 누르면 저장 확인 대신
+     * 삭제 확인이 뜬다(tabs.ts).
+     */
+    async function createAndOpenElement(format: "WP" | "DWP"): Promise<void> {
+        const name = prompt(`새 ${format} 이름:`);
+        if (name === null) return; // 취소
+        const trimmed = name.trim();
+        if (!trimmed) return;
+
+        let path: string;
+        try {
+            path = await createElement(format, trimmed);
+            logInfo(`${format} 생성: ${path}`);
+        } catch (err) {
+            logError(`${format} 생성 실패`, err);
+            alert(`생성 실패: ${err instanceof Error ? err.message : String(err)}`);
+            return;
+        }
+
+        await refreshTreeAndTimestamp();
+        await tabs.open({ name: trimmed, format, path }, { pendingCreation: true });
+    }
+
+    document.querySelector<HTMLElement>('[data-action="new-wp"]')!.addEventListener("click", () => void createAndOpenElement("WP"));
+    document.querySelector<HTMLElement>('[data-action="new-dwp"]')!.addEventListener("click", () => void createAndOpenElement("DWP"));
+
     document.querySelectorAll<HTMLElement>("[data-action]").forEach((el) => {
+        if (el.dataset.action === "new-wp" || el.dataset.action === "new-dwp") return; // 위에서 별도 처리
         el.addEventListener("click", () => {
             const action = el.dataset.action;
             logInfo(`[TODO] action not yet implemented: ${action}`);

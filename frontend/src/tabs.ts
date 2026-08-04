@@ -1,7 +1,7 @@
 // 우측 탭 영역 관리 — 탭 열기/닫기/전환 + 보기·편집 모드 + 저장.
 
 import type { ElementFormat, TreeNode } from "./tree";
-import { readProjectFile, writeProjectFile, readExternalFile } from "./fs";
+import { readProjectFile, writeProjectFile, readExternalFile, deleteProjectFile } from "./fs";
 import { renderMarkdown } from "./viewer";
 import { validateContent } from "./validate";
 import { logInfo, logError } from "./log";
@@ -20,6 +20,12 @@ interface Tab {
     dirty: boolean;
     /** 파일을 읽지 못해 오류 메시지를 대신 담고 있는 탭인지 */
     loadFailed: boolean;
+    /**
+     * "+ WP"/"+ DWP"로 막 생성해서 연 탭인지 — true인 동안은 닫기(×)가 일반적인
+     * "저장 안 한 변경사항" 확인 대신 "삭제하고 닫을까요?" 확인을 띄운다.
+     * 저장을 한 번이라도 하면 일반 탭과 동일하게 취급하도록 false로 내린다.
+     */
+    pendingCreation: boolean;
 }
 
 function fileNameOf(path: string): string {
@@ -36,6 +42,8 @@ export class TabManager {
     constructor(
         private tabBarEl: HTMLElement,
         private contentEl: HTMLElement,
+        /** pendingCreation 탭을 삭제-닫기했을 때 좌측 트리를 새로고침하라는 신호. */
+        private onFileDeleted?: () => void,
     ) {
         // 탭이 넘칠 때 네이티브 스크롤바(항상 탭 줄 바로 아래에 붙어 어색한 위치) 대신
         // 좌우 버튼으로 넘긴다. 트랙패드/휠 스크롤은 계속 되게 두고, 스크롤바만 숨긴다.
@@ -68,7 +76,11 @@ export class TabManager {
         this.nextBtn.disabled = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
     }
 
-    async open(node: TreeNode): Promise<void> {
+    /**
+     * opts.pendingCreation: 방금 "+ WP"/"+ DWP"로 만든 파일을 여는 경우 true로
+     * 넘긴다 — 편집 모드로 바로 열리고, 닫기(×)가 삭제 확인으로 바뀐다.
+     */
+    async open(node: TreeNode, opts?: { pendingCreation?: boolean }): Promise<void> {
         const existing = this.tabs.find((t) => t.path === node.path);
         if (existing) {
             this.activeId = existing.id;
@@ -89,6 +101,7 @@ export class TabManager {
             loadFailed = true;
         }
 
+        const pendingCreation = opts?.pendingCreation ?? false;
         const tab: Tab = {
             id: crypto.randomUUID(),
             title: node.name,
@@ -96,9 +109,10 @@ export class TabManager {
             format: node.format,
             external: false,
             content,
-            mode: "view",
+            mode: pendingCreation ? "edit" : "view",
             dirty: false,
             loadFailed,
+            pendingCreation,
         };
         this.tabs.push(tab);
         this.activeId = tab.id;
@@ -135,6 +149,7 @@ export class TabManager {
             external: true,
             content,
             mode: "view",
+            pendingCreation: false,
             dirty: false,
             loadFailed,
         };
@@ -166,18 +181,38 @@ export class TabManager {
     async close(id: string): Promise<void> {
         const idx = this.tabs.findIndex((t) => t.id === id);
         if (idx === -1) return;
-
         const tab = this.tabs[idx];
-        if (tab.dirty && !confirm(`"${tab.title}"에 저장하지 않은 변경사항이 있습니다. 닫을까요?`)) {
+
+        if (tab.pendingCreation) {
+            if (!confirm(`"${tab.title}"는 방금 생성한 파일입니다. 삭제하고 닫을까요?`)) return;
+            try {
+                await deleteProjectFile(tab.path);
+                logInfo(`생성 취소 — 삭제됨: ${tab.path}`);
+            } catch (err) {
+                logError(`삭제 실패: ${tab.path}`, err);
+                alert(`삭제 실패: ${err instanceof Error ? err.message : String(err)}`);
+                return;
+            }
+            this.removeTab(idx, id);
+            await this.renderActive();
+            this.onFileDeleted?.();
             return;
         }
 
+        if (tab.dirty && !confirm(`"${tab.title}"에 저장하지 않은 변경사항이 있습니다. 닫을까요?`)) {
+            return;
+        }
+        this.removeTab(idx, id);
+        await this.renderActive();
+    }
+
+    /** 탭 배열에서 idx를 제거하고, 그게 활성 탭이었다면 옆 탭으로 활성 상태를 옮긴다. */
+    private removeTab(idx: number, id: string): void {
         this.tabs.splice(idx, 1);
         if (this.activeId === id) {
             const fallback = this.tabs[idx] ?? this.tabs[idx - 1];
             this.activeId = fallback ? fallback.id : null;
         }
-        await this.renderActive();
     }
 
     async activate(id: string): Promise<void> {
@@ -219,6 +254,7 @@ export class TabManager {
 
         tab.dirty = false;
         tab.mode = "view";
+        tab.pendingCreation = false; // 한 번이라도 저장했으면 더 이상 "실수로 만든 빈 파일"이 아니다
         await this.renderActive();
     }
 
