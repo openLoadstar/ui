@@ -54,51 +54,84 @@ export function parseElementFilename(filename: string): { format: ElementFormat;
     return { format: "OTHER", name: filename.replace(/\.md$/, "") };
 }
 
-export function renderTree(
-    container: HTMLElement,
-    nodes: TreeNode[],
-    onSelect: (node: TreeNode) => void,
-    onContextMenu?: (node: TreeNode, x: number, y: number) => void,
-): void {
+export interface TreeCallbacks {
+    onSelect: (node: TreeNode) => void;
+    onContextMenu?: (node: TreeNode, x: number, y: number) => void;
+    /** GROUP 더블클릭 시 펼침/접힘을 토글해달라는 신호. */
+    onToggleCollapse?: (node: TreeNode) => void;
+    /** GROUP이 지금 접혀 있는지(자식 숨김) 조회 — 상태는 호출 쪽이 들고 있는다. */
+    isCollapsed?: (node: TreeNode) => boolean;
+}
+
+export function renderTree(container: HTMLElement, nodes: TreeNode[], callbacks: TreeCallbacks): void {
     container.innerHTML = "";
     const list = document.createElement("ul");
     list.className = "tree-list";
     for (const node of nodes) {
-        list.appendChild(renderNode(node, onSelect, onContextMenu));
+        list.appendChild(renderNode(node, callbacks));
     }
     container.appendChild(list);
 }
 
-function renderNode(
-    node: TreeNode,
-    onSelect: (node: TreeNode) => void,
-    onContextMenu?: (node: TreeNode, x: number, y: number) => void,
-): HTMLElement {
+// 더블클릭으로 판정되기 전까지 단일 클릭 처리(onSelect)를 미루는 유예 시간.
+// 이 시간 안에 두 번째 클릭(→ dblclick)이 오면 onSelect는 아예 호출되지 않는다.
+const GROUP_CLICK_DELAY_MS = 220;
+
+function renderNode(node: TreeNode, callbacks: TreeCallbacks): HTMLElement {
     const li = document.createElement("li");
     li.className = "tree-node";
 
     const row = document.createElement("div");
     row.className = "tree-row";
+    const isGroup = node.format === "GROUP";
+    const hasChildren = !!node.children && node.children.length > 0;
+    const collapsed = isGroup && hasChildren && (callbacks.isCollapsed?.(node) ?? false);
+    // 접기/펼치기 화살표는 GROUP+자식 있을 때만 보이지만, 자리는 모든 행에 동일하게
+    // 둬서 들여쓰기가 포맷에 따라 어긋나지 않게 한다.
+    const toggleArrow =
+        isGroup && hasChildren
+            ? `<span class="tree-toggle">${collapsed ? "▸" : "▾"}</span>`
+            : `<span class="tree-toggle tree-toggle--empty"></span>`;
     const statusDot = node.status
         ? `<span class="tree-status-dot" style="background:${STATUS_COLORS[node.status]}" title="${STATUS_LABELS[node.status]}"></span>`
         : "";
-    row.innerHTML = `<span class="tree-icon">${formatIcon[node.format]}</span>${statusDot}<span class="tree-label">${escapeHtml(node.name)}</span>`;
-    row.addEventListener("click", () => onSelect(node));
+    row.innerHTML = `${toggleArrow}<span class="tree-icon">${formatIcon[node.format]}</span>${statusDot}<span class="tree-label">${escapeHtml(node.name)}</span>`;
+
+    if (isGroup && callbacks.onToggleCollapse) {
+        let pendingClick: ReturnType<typeof setTimeout> | null = null;
+        row.addEventListener("click", () => {
+            if (pendingClick) return; // 이미 단일 클릭을 기다리는 중(연타 방지)
+            pendingClick = setTimeout(() => {
+                pendingClick = null;
+                callbacks.onSelect(node);
+            }, GROUP_CLICK_DELAY_MS);
+        });
+        row.addEventListener("dblclick", () => {
+            if (pendingClick) {
+                clearTimeout(pendingClick);
+                pendingClick = null;
+            }
+            callbacks.onToggleCollapse!(node); // 더블클릭은 오직 접기/펼치기만 — 정보 탭은 건드리지 않는다
+        });
+    } else {
+        row.addEventListener("click", () => callbacks.onSelect(node));
+    }
+
     // 우클릭 메뉴(이름변경/삭제)는 WP/DWP에만 둔다 — GROUP은 그룹 편집기가 전담,
     // OTHER는 범위 밖.
-    if (onContextMenu && (node.format === "WP" || node.format === "DWP")) {
+    if (callbacks.onContextMenu && (node.format === "WP" || node.format === "DWP")) {
         row.addEventListener("contextmenu", (e) => {
             e.preventDefault();
-            onContextMenu(node, e.clientX, e.clientY);
+            callbacks.onContextMenu!(node, e.clientX, e.clientY);
         });
     }
     li.appendChild(row);
 
-    if (node.children && node.children.length > 0) {
+    if (hasChildren && !collapsed) {
         const childList = document.createElement("ul");
         childList.className = "tree-list tree-list--nested";
-        for (const child of node.children) {
-            childList.appendChild(renderNode(child, onSelect, onContextMenu));
+        for (const child of node.children!) {
+            childList.appendChild(renderNode(child, callbacks));
         }
         li.appendChild(childList);
     }

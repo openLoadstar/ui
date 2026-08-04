@@ -257,6 +257,20 @@ body.resizing-col {
     align-items: center;
 }
 
+.tree-toggle {
+    width: 10px;
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--text-dim);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tree-toggle--empty {
+    visibility: hidden;
+}
+
 .tree-label {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -452,6 +466,64 @@ body.resizing-col {
 .md-viewer pre.mermaid svg {
     max-width: 100%;
     height: auto;
+}
+
+/* --- GROUP 정보 탭 --- */
+.group-info {
+    max-width: 640px;
+}
+
+.group-info-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.group-info-title {
+    font-size: 18px;
+    font-weight: 600;
+    flex: 1;
+}
+
+.group-info-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.group-info-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+}
+
+.group-info-item:last-child {
+    border-bottom: none;
+}
+
+.group-info-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.group-info-item--broken {
+    cursor: default;
+    color: var(--text-dim);
+}
+
+.group-info-item--broken:hover {
+    background: none;
+}
+
+.group-info-empty {
+    padding: 10px 12px;
+    color: var(--text-dim);
 }
 
 /* --- 텍스트 에디터 --- */

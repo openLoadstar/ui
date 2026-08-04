@@ -8,6 +8,12 @@
 const CONNECTIONS_HEADER = /^###\s*CONNECTIONS/;
 const ITEMS_HEADER = /^-\s*ITEMS:\s*(\[\])?\s*$/;
 const ITEMS_ROW = /^\s{2,}-\s+(.+?)\s*$/;
+const SUMMARY_LINE = /^-\s*SUMMARY:\s*(.*)$/m;
+
+/** GROUP 파일 원문에서 IDENTITY.SUMMARY 값을 뽑아낸다. 없으면 빈 문자열. */
+export function parseSummary(raw: string): string {
+    return raw.match(SUMMARY_LINE)?.[1].trim() ?? "";
+}
 
 function findConnectionsRange(lines: string[]): { start: number; end: number } | null {
     const start = lines.findIndex((l) => CONNECTIONS_HEADER.test(l));

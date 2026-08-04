@@ -3,6 +3,7 @@
 import type { ElementFormat, TreeNode } from "./tree";
 import { readProjectFile, writeProjectFile, readExternalFile, deleteProjectFile } from "./fs";
 import { renderMarkdown } from "./viewer";
+import { renderGroupInfo } from "./groupInfoView";
 import { validateContent } from "./validate";
 import { logInfo, logError } from "./log";
 
@@ -238,14 +239,14 @@ export class TabManager {
 
     private toggleMode(): void {
         const tab = this.activeTab();
-        if (!tab || tab.external) return;
+        if (!tab || tab.external || tab.format === "GROUP") return;
         tab.mode = tab.mode === "view" ? "edit" : "view";
         void this.renderActive();
     }
 
     private async save(): Promise<void> {
         const tab = this.activeTab();
-        if (!tab || tab.external) return;
+        if (!tab || tab.external || tab.format === "GROUP") return;
 
         const result = validateContent(tab.format as ElementFormat, tab.content);
         if (!result.valid) {
@@ -298,10 +299,13 @@ export class TabManager {
             return;
         }
 
-        const editControls = tab.external
-            ? '<span class="viewer-external-badge">읽기 전용 (탐색됨)</span>'
-            : `<button class="tb-btn" data-role="toggle-mode"></button>
-               <button class="tb-btn" data-role="save" ${tab.mode === "edit" ? "" : "disabled"}>저장</button>`;
+        const isGroup = tab.format === "GROUP";
+        const editControls = isGroup
+            ? "" // 그룹 편집기가 멤버십 수정을 전담 — 이 탭은 정보 표시 전용
+            : tab.external
+              ? '<span class="viewer-external-badge">읽기 전용 (탐색됨)</span>'
+              : `<button class="tb-btn" data-role="toggle-mode"></button>
+                 <button class="tb-btn" data-role="save" ${tab.mode === "edit" ? "" : "disabled"}>저장</button>`;
 
         this.contentEl.innerHTML = `
             <div class="viewer-toolbar">
@@ -313,7 +317,7 @@ export class TabManager {
         `;
         this.contentEl.querySelector(".viewer-path")!.textContent = tab.path;
 
-        if (!tab.external) {
+        if (!tab.external && !isGroup) {
             const toggleBtn = this.contentEl.querySelector<HTMLButtonElement>('[data-role="toggle-mode"]')!;
             toggleBtn.textContent = tab.mode === "view" ? "✎ 편집" : "👁 미리보기";
             toggleBtn.addEventListener("click", () => this.toggleMode());
@@ -324,7 +328,14 @@ export class TabManager {
         }
 
         const body = this.contentEl.querySelector<HTMLElement>(".viewer-body")!;
-        if (tab.mode === "edit") {
+        if (isGroup) {
+            try {
+                await renderGroupInfo(body, tab.content, tab.path, (target) => void this.open(target));
+            } catch (err) {
+                logError(`GROUP 정보 렌더링 실패: ${tab.path}`, err);
+                body.innerHTML = `<div class="viewer-empty">⚠️ GROUP 정보를 표시하는 중 오류가 발생했습니다. 콘솔/로그를 확인하세요.</div>`;
+            }
+        } else if (tab.mode === "edit") {
             body.innerHTML = `<textarea class="editor-textarea" spellcheck="false"></textarea>`;
             const textarea = body.querySelector<HTMLTextAreaElement>(".editor-textarea")!;
             textarea.value = tab.content;

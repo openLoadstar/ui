@@ -81,15 +81,27 @@ function startExplorer(projectRoot: string): void {
     // 마지막으로 불러온(미필터) 트리. 체크박스만 바꿀 때는 재조회 없이 이걸 다시 필터링해서 그린다.
     let latestProjectTree: TreeNode[] = [];
     const activeStatuses = new Set<StatusBucket>(STATUS_ORDER);
+    // 접힌 GROUP의 path 집합 — 재렌더링(필터 토글, 업데이트 등)에도 유지되도록 트리 데이터가 아니라 여기 따로 둔다.
+    const collapsedGroupPaths = new Set<string>();
 
     function onTreeNodeSelect(node: TreeNode): void {
-        if (node.format === "GROUP") return; // GROUP은 컨테이너일 뿐, 탭으로 열지 않는다
         logInfo(`트리 선택: ${node.name} (${node.path})`);
         void tabs.open(node);
     }
 
+    function toggleGroupCollapse(node: TreeNode): void {
+        if (collapsedGroupPaths.has(node.path)) collapsedGroupPaths.delete(node.path);
+        else collapsedGroupPaths.add(node.path);
+        renderFilteredTree();
+    }
+
     function renderFilteredTree(): void {
-        renderTree(treeBody, filterTreeByStatus(latestProjectTree, activeStatuses), onTreeNodeSelect, openTreeContextMenu);
+        renderTree(treeBody, filterTreeByStatus(latestProjectTree, activeStatuses), {
+            onSelect: onTreeNodeSelect,
+            onContextMenu: openTreeContextMenu,
+            onToggleCollapse: toggleGroupCollapse,
+            isCollapsed: (node) => collapsedGroupPaths.has(node.path),
+        });
     }
 
     statusFilterEl.innerHTML = STATUS_ORDER.map(
