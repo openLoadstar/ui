@@ -15,6 +15,7 @@ var assets embed.FS
 func main() {
 	// 인자 없이 실행하면 GUI, 서브커맨드가 있으면 CLI로 동작 후 종료(`05.CLI_SPEC.md` §1).
 	if len(os.Args) > 1 {
+		fixConsoleOutput() // NULL 표준출력 핸들 복구 + UTF-8 코드페이지 설정(console_windows.go)
 		os.Exit(runCLI(os.Args[1:]))
 	}
 
