@@ -31,4 +31,16 @@ FORMAT에 무관하게 파일명 필드(FORMAT/VER/DATE/이름) + IDENTITY.SUMMA
 - TODO 아카이브 파일(`appendix/WP.md` "TODO 아카이브 규칙" 참조)을 이 추출기가 어떻게 다룰지 — 새 파일명 규칙에서는 일반 WP와 구분 안 됨. appendix 쪽 결정 대기 중.
 
 ### COMMENT
-(없음)
+
+```mermaid
+flowchart LR
+    A[md 파일] --> B[파일명 파서]
+    A --> C[공통 봉투 파서]
+    A --> D[마크다운 구조 파서]
+    B --> E[(nodes)]
+    C --> E
+    D --> E
+    C --> F[(edges)]
+    G[git log] --> H[(history)]
+```
+

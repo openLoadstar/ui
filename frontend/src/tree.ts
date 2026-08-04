@@ -1,48 +1,36 @@
-// 좌측 트리 데이터 모델과 렌더링.
-//
-// TODO(구조 추출기 WP 완료 후): 이 목업 데이터를 Go 백엔드의 GROUP_ITEM 엣지 조회 결과로 교체한다.
-// GROUP에 속하지 않은 WP/DWP는 트리 루트에 그대로 노출한다(appendix/GROUP.md 트레이드오프 대응).
+// 좌측 트리 데이터 모델과 렌더링. 실제 트리 구성(GROUP 계층 기반)은 projectTree.ts.
 
-export type ElementFormat = "GROUP" | "WP" | "DWP";
+export type ElementFormat = "GROUP" | "WP" | "DWP" | "OTHER";
 
 export interface TreeNode {
     name: string;
     format: ElementFormat;
+    /** 프로젝트 루트 기준 상대 경로. Go의 ReadFile/WriteFile에 그대로 전달된다. */
+    path: string;
     children?: TreeNode[];
 }
 
-export const mockTree: TreeNode[] = [
-    {
-        name: "LOADSTAR 2.0 Standalone Viewer",
-        format: "WP",
-    },
-    {
-        name: "구조 추출기",
-        format: "WP",
-    },
-    {
-        name: "md Mermaid 뷰어",
-        format: "WP",
-    },
-    {
-        name: "온디맨드 도메인 조회기",
-        format: "WP",
-    },
-    {
-        name: "탐색기 셸",
-        format: "WP",
-    },
-    {
-        name: "CLI 진입점",
-        format: "WP",
-    },
-];
-
-const formatIcon: Record<ElementFormat, string> = {
+export const formatIcon: Record<ElementFormat, string> = {
     GROUP: "\u{1F4C1}", // 📁
     WP: "\u{1F4C4}", // 📄
     DWP: "\u{1F5C3}️", // 🗃️
+    OTHER: "\u{1F4DD}", // 📝
 };
+
+const STRUCTURED_NAME = /^\[([^\]]+)\]\[[^\]]+\]\[[^\]]+\](.+)\.md$/;
+
+/**
+ * 파일명(디렉토리 제외)에서 FORMAT과 표시 이름을 뽑아낸다.
+ * `[FORMAT][VER][DATE]이름.md` 패턴에 안 맞으면 OTHER로 간주한다
+ * (`02.ELEMENT_FORMAT.md` §1 "유일한 예외").
+ */
+export function parseElementFilename(filename: string): { format: ElementFormat; name: string } {
+    const m = filename.match(STRUCTURED_NAME);
+    if (m) {
+        return { format: m[1] as ElementFormat, name: m[2] };
+    }
+    return { format: "OTHER", name: filename.replace(/\.md$/, "") };
+}
 
 export function renderTree(
     container: HTMLElement,
