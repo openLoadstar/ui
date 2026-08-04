@@ -1,5 +1,5 @@
 import "./style.css";
-import { renderTree, type TreeNode } from "./tree";
+import { renderTree, filterTreeByStatus, type TreeNode } from "./tree";
 import { buildProjectTree } from "./projectTree";
 import { TabManager } from "./tabs";
 import { initSplitter } from "./splitter";
@@ -7,6 +7,7 @@ import { logInfo, logError } from "./log";
 import { openBrowseModal } from "./browseModal";
 import { renderProjectPickerScreen, openProjectPickerModal } from "./projectPicker";
 import { openGroupEditor } from "./groupEditor";
+import { STATUS_ORDER, STATUS_LABELS, STATUS_COLORS, type StatusBucket } from "./wpStatus";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -36,6 +37,8 @@ function startExplorer(projectRoot: string): void {
           <button class="tb-btn" data-action="new-dwp">+ DWP</button>
           <button class="tb-btn" data-role="new-group">+ GROUP</button>
           <button class="tb-btn" data-action="reindex">⟳ 재색인</button>
+          <div class="toolbar-spacer"></div>
+          <div id="status-filter" class="status-filter"></div>
         </div>
         <div id="main">
           <div id="tree-panel" class="panel">
@@ -57,6 +60,7 @@ function startExplorer(projectRoot: string): void {
     const treePanel = document.querySelector<HTMLDivElement>("#tree-panel")!;
     const treeBody = document.querySelector<HTMLDivElement>("#tree-body")!;
     const treeUpdatedAt = document.querySelector<HTMLElement>(".tree-updated-at")!;
+    const statusFilterEl = document.querySelector<HTMLDivElement>("#status-filter")!;
     const splitter = document.querySelector<HTMLDivElement>("#splitter")!;
     const tabBar = document.querySelector<HTMLDivElement>("#tab-bar")!;
     const tabContent = document.querySelector<HTMLDivElement>("#tab-content")!;
@@ -71,19 +75,46 @@ function startExplorer(projectRoot: string): void {
         treeUpdatedAt.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} updated`;
     }
 
+    // 마지막으로 불러온(미필터) 트리. 체크박스만 바꿀 때는 재조회 없이 이걸 다시 필터링해서 그린다.
+    let latestProjectTree: TreeNode[] = [];
+    const activeStatuses = new Set<StatusBucket>(STATUS_ORDER);
+
+    function onTreeNodeSelect(node: TreeNode): void {
+        if (node.format === "GROUP") return; // GROUP은 컨테이너일 뿐, 탭으로 열지 않는다
+        logInfo(`트리 선택: ${node.name} (${node.path})`);
+        void tabs.open(node);
+    }
+
+    function renderFilteredTree(): void {
+        renderTree(treeBody, filterTreeByStatus(latestProjectTree, activeStatuses), onTreeNodeSelect);
+    }
+
+    statusFilterEl.innerHTML = STATUS_ORDER.map(
+        (status) => `
+      <label class="status-filter-item" data-status="${status}">
+        <input type="checkbox" checked />
+        <span class="status-dot" style="background:${STATUS_COLORS[status]}"></span>
+        ${STATUS_LABELS[status]}
+      </label>`,
+    ).join("");
+
+    statusFilterEl.querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+            const status = checkbox.closest<HTMLElement>("[data-status]")!.dataset.status as StatusBucket;
+            if (checkbox.checked) activeStatuses.add(status);
+            else activeStatuses.delete(status);
+            renderFilteredTree();
+        });
+    });
+
     async function renderCurrentTree(): Promise<void> {
-        let projectTree: TreeNode[];
         try {
-            projectTree = await buildProjectTree();
+            latestProjectTree = await buildProjectTree();
         } catch (err) {
             logError("트리 구성 실패", err);
-            projectTree = [];
+            latestProjectTree = [];
         }
-        renderTree(treeBody, projectTree, (node: TreeNode) => {
-            if (node.format === "GROUP") return; // GROUP은 컨테이너일 뿐, 탭으로 열지 않는다
-            logInfo(`트리 선택: ${node.name} (${node.path})`);
-            void tabs.open(node);
-        });
+        renderFilteredTree();
     }
 
     async function refreshTreeAndTimestamp(): Promise<void> {

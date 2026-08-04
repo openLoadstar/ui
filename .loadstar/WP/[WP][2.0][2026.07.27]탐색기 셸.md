@@ -1,4 +1,4 @@
-## [STATUS] S_IDL
+## [STATUS] S_PRG
 
 ### IDENTITY
 - SUMMARY: 메뉴바·툴바·GROUP 기반 좌측 트리·탭 관리로 구성된 탐색기 형태의 앱 셸
@@ -28,6 +28,7 @@
 - [x] 시작 화면 — 프로젝트(홈 디렉토리) 선택 화면(최근 프로젝트 목록 + 폴더 찾아보기), `App.OpenProject`
 - [x] 좌측 트리 상단 — 업데이트 버튼 + 마지막 업데이트 시각. 클릭 시 트리 재구성(`buildProjectTree`) + 열린 탭 재조회(`TabManager.refreshAll`, dirty 탭은 덮어쓰지 않고 건너뜀). 그룹 편집기에서 변경이 있을 때도 같은 경로로 자동 갱신됨
 - [x] 탭 오버플로우 — 탭이 넘칠 때 네이티브 가로 스크롤바 대신 좌우 ‹›버튼(넘칠 때만 노출, 끝에서 비활성화). 활성 탭이 화면 밖이면 자동으로 스크롤해 보여줌
+- [x] 2026-08-04 좌측 트리 WP 항목에 STATUS 색상 점 표시 + 툴바 우측 상태 필터 체크박스(대기/진행중/종료/검토/제외 5개, 초기 전체 선택). S_ERR은 별도 체크박스 없이 검토(S_REV)와 같은 색으로 합쳐서 취급. 체크 해제 시 해당 상태의 WP를 트리에서 숨김(GROUP/DWP/OTHER 노드와 STATUS 없는 WP는 필터 영향 없이 항상 표시) — `frontend/src/wpStatus.ts`(라벨·색상·파싱), `projectTree.ts`(WP 경로별 STATUS 조회 후 부착), `tree.ts`(점 렌더링 + `filterTreeByStatus`)
 
 ### ISSUE
 (없음)

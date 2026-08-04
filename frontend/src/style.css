@@ -8,6 +8,9 @@
     --text-dim: #9aa5b8;
     --accent: #4a8cff;
     --danger: #e0a458;
+    --status-idl: #6b7690;
+    --status-stb: #4caf7d;
+    --status-oos: #7d7a9c;
 }
 
 * {
@@ -111,6 +114,38 @@ html, body {
 .tb-btn:disabled {
     opacity: 0.4;
     cursor: default;
+}
+
+.toolbar-spacer {
+    flex: 1;
+}
+
+.status-filter {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.status-filter-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text-dim);
+    cursor: pointer;
+    user-select: none;
+}
+
+.status-filter-item input {
+    cursor: pointer;
+}
+
+.status-dot,
+.tree-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
 }
 
 /* 좌우/하단 5px, 트리·탭 패널 사이는 splitter가 담당 */

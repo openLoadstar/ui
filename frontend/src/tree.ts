@@ -1,5 +1,7 @@
 // 좌측 트리 데이터 모델과 렌더링. 실제 트리 구성(GROUP 계층 기반)은 projectTree.ts.
 
+import { STATUS_COLORS, STATUS_LABELS, type StatusBucket } from "./wpStatus";
+
 export type ElementFormat = "GROUP" | "WP" | "DWP" | "OTHER";
 
 export interface TreeNode {
@@ -8,6 +10,8 @@ export interface TreeNode {
     /** 프로젝트 루트 기준 상대 경로. Go의 ReadFile/WriteFile에 그대로 전달된다. */
     path: string;
     children?: TreeNode[];
+    /** format이 WP일 때만 의미 있음. STATUS 헤더가 없거나 파싱 실패하면 undefined. */
+    status?: StatusBucket;
 }
 
 export const formatIcon: Record<ElementFormat, string> = {
@@ -52,7 +56,10 @@ function renderNode(node: TreeNode, onSelect: (node: TreeNode) => void): HTMLEle
 
     const row = document.createElement("div");
     row.className = "tree-row";
-    row.innerHTML = `<span class="tree-icon">${formatIcon[node.format]}</span><span class="tree-label">${escapeHtml(node.name)}</span>`;
+    const statusDot = node.status
+        ? `<span class="tree-status-dot" style="background:${STATUS_COLORS[node.status]}" title="${STATUS_LABELS[node.status]}"></span>`
+        : "";
+    row.innerHTML = `<span class="tree-icon">${formatIcon[node.format]}</span>${statusDot}<span class="tree-label">${escapeHtml(node.name)}</span>`;
     row.addEventListener("click", () => onSelect(node));
     li.appendChild(row);
 
@@ -66,6 +73,21 @@ function renderNode(node: TreeNode, onSelect: (node: TreeNode) => void): HTMLEle
     }
 
     return li;
+}
+
+/**
+ * WP 노드를 STATUS 필터로 걸러낸 트리 복사본을 만든다.
+ * GROUP/DWP/OTHER는 필터 대상이 아니므로 항상 유지한다(자식이 전부 걸러져도 GROUP 자체는 남는다).
+ * status가 없는 WP(파싱 실패 등)도 안전하게 항상 표시한다.
+ */
+export function filterTreeByStatus(nodes: TreeNode[], activeStatuses: ReadonlySet<StatusBucket>): TreeNode[] {
+    const result: TreeNode[] = [];
+    for (const node of nodes) {
+        if (node.format === "WP" && node.status && !activeStatuses.has(node.status)) continue;
+        const children = node.children ? filterTreeByStatus(node.children, activeStatuses) : undefined;
+        result.push(children ? { ...node, children } : { ...node });
+    }
+    return result;
 }
 
 function escapeHtml(text: string): string {
