@@ -14,14 +14,32 @@ export interface TreeNode {
     status?: StatusBucket;
 }
 
+// 이모지(📄 등)는 폰트에 색이 고정된 그림이라 CSS로 못 바꾼다 — WP/DWP는
+// 같은 모양의 선(stroke) 아이콘으로 만들고 색만 다르게 줘서 구분한다.
+function fileIconSvg(strokeColor: string): string {
+    return `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="${strokeColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+}
+
 export const formatIcon: Record<ElementFormat, string> = {
     GROUP: "\u{1F4C1}", // 📁
-    WP: "\u{1F4C4}", // 📄
-    DWP: "\u{1F5C3}️", // 🗃️
+    WP: fileIconSvg("currentColor"), // 트리 기본 텍스트색(다크 테마에서 흰색 계열)
+    DWP: fileIconSvg("var(--accent)"), // 파란 accent색
     OTHER: "\u{1F4DD}", // 📝
 };
 
 const STRUCTURED_NAME = /^\[([^\]]+)\]\[[^\]]+\]\[[^\]]+\](.+)\.md$/;
+const STRUCTURED_PREFIX = /^(\[[^\]]+\]\[[^\]]+\]\[[^\]]+\]).+(\.md)$/;
+
+/**
+ * 파일명의 `[FORMAT][VER][DATE]` 접두어는 그대로 두고 자유 텍스트 이름만
+ * 바꾼 새 파일명을 만든다(`02.ELEMENT_FORMAT.md` §2 — 이름만 리네이밍 가능).
+ * 접두어 패턴에 안 맞으면(OTHER 등) null.
+ */
+export function renameFilenameKeepingPrefix(filename: string, newName: string): string | null {
+    const m = filename.match(STRUCTURED_PREFIX);
+    if (!m) return null;
+    return `${m[1]}${newName}${m[2]}`;
+}
 
 /**
  * 파일명(디렉토리 제외)에서 FORMAT과 표시 이름을 뽑아낸다.
@@ -40,17 +58,22 @@ export function renderTree(
     container: HTMLElement,
     nodes: TreeNode[],
     onSelect: (node: TreeNode) => void,
+    onContextMenu?: (node: TreeNode, x: number, y: number) => void,
 ): void {
     container.innerHTML = "";
     const list = document.createElement("ul");
     list.className = "tree-list";
     for (const node of nodes) {
-        list.appendChild(renderNode(node, onSelect));
+        list.appendChild(renderNode(node, onSelect, onContextMenu));
     }
     container.appendChild(list);
 }
 
-function renderNode(node: TreeNode, onSelect: (node: TreeNode) => void): HTMLElement {
+function renderNode(
+    node: TreeNode,
+    onSelect: (node: TreeNode) => void,
+    onContextMenu?: (node: TreeNode, x: number, y: number) => void,
+): HTMLElement {
     const li = document.createElement("li");
     li.className = "tree-node";
 
@@ -61,13 +84,21 @@ function renderNode(node: TreeNode, onSelect: (node: TreeNode) => void): HTMLEle
         : "";
     row.innerHTML = `<span class="tree-icon">${formatIcon[node.format]}</span>${statusDot}<span class="tree-label">${escapeHtml(node.name)}</span>`;
     row.addEventListener("click", () => onSelect(node));
+    // 우클릭 메뉴(이름변경/삭제)는 WP/DWP에만 둔다 — GROUP은 그룹 편집기가 전담,
+    // OTHER는 범위 밖.
+    if (onContextMenu && (node.format === "WP" || node.format === "DWP")) {
+        row.addEventListener("contextmenu", (e) => {
+            e.preventDefault();
+            onContextMenu(node, e.clientX, e.clientY);
+        });
+    }
     li.appendChild(row);
 
     if (node.children && node.children.length > 0) {
         const childList = document.createElement("ul");
         childList.className = "tree-list tree-list--nested";
         for (const child of node.children) {
-            childList.appendChild(renderNode(child, onSelect));
+            childList.appendChild(renderNode(child, onSelect, onContextMenu));
         }
         li.appendChild(childList);
     }

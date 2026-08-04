@@ -206,6 +206,18 @@ export class TabManager {
         await this.renderActive();
     }
 
+    /**
+     * path로 열려 있는 탭이 있으면 확인 없이 바로 닫는다 — 트리에서 그 항목을
+     * 이름변경/삭제했을 때 정리용. 그대로 두면 옛 경로를 가리키는 탭에서
+     * 저장을 눌러 파일이 의도치 않게 되살아날 수 있다.
+     */
+    async closeByPath(path: string): Promise<void> {
+        const idx = this.tabs.findIndex((t) => t.path === path);
+        if (idx === -1) return;
+        this.removeTab(idx, this.tabs[idx].id);
+        await this.renderActive();
+    }
+
     /** 탭 배열에서 idx를 제거하고, 그게 활성 탭이었다면 옆 탭으로 활성 상태를 옮긴다. */
     private removeTab(idx: number, id: string): void {
         this.tabs.splice(idx, 1);

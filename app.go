@@ -174,6 +174,34 @@ func (a *App) DeleteFile(relPath string) error {
 	return nil
 }
 
+// RenameFile moves a project-relative file to a new project-relative path —
+// used by the tree's "이름변경" action. Both paths must stay inside the
+// project root; the destination must not already exist.
+func (a *App) RenameFile(oldRelPath, newRelPath string) error {
+	if a.projectRoot == "" {
+		return errors.New("열려 있는 프로젝트가 없습니다")
+	}
+	oldFull, err := resolveProjectPath(a.projectRoot, oldRelPath)
+	if err != nil {
+		log.Printf("RenameFile: invalid old path %q: %v", oldRelPath, err)
+		return err
+	}
+	newFull, err := resolveProjectPath(a.projectRoot, newRelPath)
+	if err != nil {
+		log.Printf("RenameFile: invalid new path %q: %v", newRelPath, err)
+		return err
+	}
+	if _, err := os.Stat(newFull); err == nil {
+		return fmt.Errorf("이미 같은 이름의 파일이 있습니다: %s", filepath.Base(newFull))
+	}
+	if err := os.Rename(oldFull, newFull); err != nil {
+		log.Printf("RenameFile: failed %q -> %q: %v", oldRelPath, newRelPath, err)
+		return err
+	}
+	log.Printf("RenameFile: ok %q -> %q", oldRelPath, newRelPath)
+	return nil
+}
+
 // BrowseFile opens a native "open file" dialog scoped to markdown files and
 // returns the absolute path chosen, or "" if the user cancelled. Unlike
 // ReadFile/WriteFile, this is not restricted to the current project root —

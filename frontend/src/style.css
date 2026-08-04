@@ -253,6 +253,8 @@ body.resizing-col {
 
 .tree-icon {
     font-size: 12px;
+    display: inline-flex;
+    align-items: center;
 }
 
 .tree-label {
@@ -500,6 +502,34 @@ body.resizing-col {
 
 .menu-dropdown-item:hover {
     background: rgba(255, 255, 255, 0.08);
+}
+
+/* --- 트리 우클릭 메뉴 --- */
+.context-menu {
+    position: fixed;
+    min-width: 140px;
+    background: var(--panel);
+    border: 1px solid var(--outline);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    z-index: 30;
+    padding: 4px 0;
+}
+
+.context-menu-item {
+    padding: 6px 14px;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.context-menu-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.context-menu-item--danger:hover {
+    background: rgba(224, 164, 88, 0.15);
+    color: var(--danger);
 }
 
 /* --- 탐색 모달 --- */

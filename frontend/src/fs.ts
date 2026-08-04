@@ -17,6 +17,7 @@ import {
     ListFormatFiles as goListFormatFiles,
     DeleteFile as goDeleteFile,
     CreateElement as goCreateElement,
+    RenameFile as goRenameFile,
 } from "../wailsjs/go/main/App";
 import type { main } from "../wailsjs/go/models";
 // 개발 중 브라우저 미리보기 전용 — 실제 WP 파일을 그대로 읽어와 목업으로 쓴다(내용 중복 없음).
@@ -205,5 +206,25 @@ export async function deleteProjectFile(path: string): Promise<void> {
     if (listing) {
         const idx = listing.indexOf(path);
         if (idx !== -1) listing.splice(idx, 1);
+    }
+}
+
+/** project-relative 경로의 파일을 새 project-relative 경로로 옮긴다. 대상이 이미 있으면 실패. */
+export async function renameProjectFile(oldPath: string, newPath: string): Promise<void> {
+    if (isWailsRuntimeAvailable()) {
+        await goRenameFile(oldPath, newPath);
+        return;
+    }
+    if (mockStore[newPath] !== undefined) {
+        throw new Error(`이미 같은 이름의 파일이 있습니다: ${newPath.split("/").pop()}`);
+    }
+    mockStore[newPath] = mockStore[oldPath] ?? "";
+    delete mockStore[oldPath];
+    const format = oldPath.split("/")[1];
+    const listing = format && mockDirListing[format];
+    if (listing) {
+        const idx = listing.indexOf(oldPath);
+        if (idx !== -1) listing[idx] = newPath;
+        else listing.push(newPath);
     }
 }

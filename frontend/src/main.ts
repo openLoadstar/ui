@@ -1,5 +1,5 @@
 import "./style.css";
-import { renderTree, filterTreeByStatus, type TreeNode } from "./tree";
+import { renderTree, filterTreeByStatus, renameFilenameKeepingPrefix, type TreeNode } from "./tree";
 import { buildProjectTree } from "./projectTree";
 import { TabManager } from "./tabs";
 import { initSplitter } from "./splitter";
@@ -7,7 +7,9 @@ import { logInfo, logError } from "./log";
 import { openBrowseModal } from "./browseModal";
 import { renderProjectPickerScreen, openProjectPickerModal } from "./projectPicker";
 import { openGroupEditor } from "./groupEditor";
-import { createElement } from "./fs";
+import { createElement, readProjectFile, writeProjectFile, deleteProjectFile, renameProjectFile } from "./fs";
+import { loadAllGroups } from "./groupIndex";
+import { parseGroupItems, setGroupItems } from "./groupFile";
 import { STATUS_ORDER, STATUS_LABELS, STATUS_COLORS, type StatusBucket } from "./wpStatus";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -87,7 +89,7 @@ function startExplorer(projectRoot: string): void {
     }
 
     function renderFilteredTree(): void {
-        renderTree(treeBody, filterTreeByStatus(latestProjectTree, activeStatuses), onTreeNodeSelect);
+        renderTree(treeBody, filterTreeByStatus(latestProjectTree, activeStatuses), onTreeNodeSelect, openTreeContextMenu);
     }
 
     statusFilterEl.innerHTML = STATUS_ORDER.map(
@@ -162,6 +164,109 @@ function startExplorer(projectRoot: string): void {
 
     document.querySelector<HTMLElement>('[data-action="new-wp"]')!.addEventListener("click", () => void createAndOpenElement("WP"));
     document.querySelector<HTMLElement>('[data-action="new-dwp"]')!.addEventListener("click", () => void createAndOpenElement("DWP"));
+
+    // --- WP/DWP 우클릭 메뉴(이름변경/삭제) ---
+
+    function closeTreeContextMenu(): void {
+        document.querySelector(".context-menu")?.remove();
+    }
+
+    function openTreeContextMenu(node: TreeNode, x: number, y: number): void {
+        closeTreeContextMenu();
+        const menu = document.createElement("div");
+        menu.className = "context-menu";
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
+        menu.innerHTML = `
+            <div class="context-menu-item" data-role="rename">이름변경</div>
+            <div class="context-menu-item context-menu-item--danger" data-role="delete">삭제</div>
+        `;
+        document.body.appendChild(menu);
+        menu.querySelector('[data-role="rename"]')!.addEventListener("click", () => {
+            closeTreeContextMenu();
+            void renameElement(node);
+        });
+        menu.querySelector('[data-role="delete"]')!.addEventListener("click", () => {
+            closeTreeContextMenu();
+            void deleteElement(node);
+        });
+        // 지금 이 클릭 이벤트가 document까지 버블링돼서 바로 닫히지 않도록 다음 tick에 등록.
+        setTimeout(() => document.addEventListener("click", closeTreeContextMenu, { once: true }), 0);
+    }
+
+    /** filename이 소속된 모든 GROUP의 ITEMS를 replacement로 갱신한다(null이면 제거). */
+    async function updateGroupMemberships(filename: string, replacement: string | null): Promise<void> {
+        const groups = await loadAllGroups();
+        for (const g of groups) {
+            if (!g.items.includes(filename)) continue;
+            const raw = await readProjectFile(g.path);
+            const items = replacement
+                ? parseGroupItems(raw).map((f) => (f === filename ? replacement : f))
+                : parseGroupItems(raw).filter((f) => f !== filename);
+            await writeProjectFile(g.path, setGroupItems(raw, items));
+        }
+    }
+
+    async function renameElement(node: TreeNode): Promise<void> {
+        const newName = prompt(`새 이름:`, node.name);
+        if (newName === null) return;
+        const trimmed = newName.trim();
+        if (!trimmed || trimmed === node.name) return;
+
+        const filename = node.path.split("/").pop()!;
+        const newFilename = renameFilenameKeepingPrefix(filename, trimmed);
+        if (!newFilename) {
+            alert("파일명 형식을 해석할 수 없어 이름을 바꿀 수 없습니다.");
+            return;
+        }
+        const dir = node.path.slice(0, node.path.length - filename.length);
+        const newPath = `${dir}${newFilename}`;
+
+        if (
+            !confirm(
+                `"${node.name}" → "${trimmed}"로 이름을 바꿀까요?\n\n이 파일을 참조하는 다른 WP의 CONNECTIONS는 자동으로 갱신되지 않습니다(나중에 검증 도구가 깨진 참조로 감지). 소속 GROUP은 자동으로 갱신됩니다.`,
+            )
+        ) {
+            return;
+        }
+
+        try {
+            await renameProjectFile(node.path, newPath);
+            await updateGroupMemberships(filename, newFilename);
+            logInfo(`이름 변경: ${node.path} → ${newPath}`);
+        } catch (err) {
+            logError(`이름 변경 실패: ${node.path}`, err);
+            alert(`이름 변경 실패: ${err instanceof Error ? err.message : String(err)}`);
+            return;
+        }
+
+        await tabs.closeByPath(node.path);
+        await refreshTreeAndTimestamp();
+    }
+
+    async function deleteElement(node: TreeNode): Promise<void> {
+        if (
+            !confirm(
+                `"${node.name}"(${node.format})을 삭제할까요?\n\n파일이 실제로 삭제되며 되돌릴 수 없습니다. 이 파일을 참조하는 다른 WP의 CONNECTIONS는 자동으로 정리되지 않습니다(나중에 검증 도구가 깨진 참조로 감지). 소속 GROUP에서는 자동으로 제거됩니다.`,
+            )
+        ) {
+            return;
+        }
+
+        const filename = node.path.split("/").pop()!;
+        try {
+            await deleteProjectFile(node.path);
+            await updateGroupMemberships(filename, null);
+            logInfo(`삭제: ${node.path}`);
+        } catch (err) {
+            logError(`삭제 실패: ${node.path}`, err);
+            alert(`삭제 실패: ${err instanceof Error ? err.message : String(err)}`);
+            return;
+        }
+
+        await tabs.closeByPath(node.path);
+        await refreshTreeAndTimestamp();
+    }
 
     document.querySelectorAll<HTMLElement>("[data-action]").forEach((el) => {
         if (el.dataset.action === "new-wp" || el.dataset.action === "new-dwp") return; // 위에서 별도 처리

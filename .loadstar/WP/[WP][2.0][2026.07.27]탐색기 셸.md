@@ -23,6 +23,7 @@
 - [ ] 메뉴바 — 편집/보기 메뉴 (현재 플레이스홀더)
 - [x] 2026-08-04 툴바 — 새 WP/DWP 생성(이름만 입력 → 부록 스캐폴딩으로 즉시 파일 생성 → 편집 모드로 탭 오픈, GROUP 생성은 그룹 편집기의 "+ GROUP"이 이미 담당). `App.CreateElement`(`app.go`)가 `loadstar create` CLI 서브커맨드(`cli.go: createElement`)와 스캐폴딩/동명충돌 로직을 공유. reindex 버튼은 구조 추출기 WP 대기 중이라 범위 밖
 - [x] 2026-08-04 방금 생성한 WP/DWP 탭을 편집 없이 닫으면(×) 저장 확인 대신 "삭제하고 닫을까요?" 확인 — 실수로 만든 빈 스캐폴딩 파일이 프로젝트에 계속 남는 것을 방지. 저장을 한 번이라도 하면 일반 탭과 동일하게 취급(`Tab.pendingCreation`, `tabs.ts`)
+- [x] 2026-08-04 좌측 트리의 WP/DWP 항목 우클릭 메뉴 — 이름변경/삭제(GROUP/OTHER는 범위 밖, GROUP은 그룹 편집기가 전담). `App.RenameFile`(`app.go`, `os.Rename` 기반) 추가. 소속 GROUP들의 ITEMS는 자동 갱신하지만, 다른 WP/DWP의 CONNECTIONS는 건드리지 않음(`02.ELEMENT_FORMAT.md` §4 Tolerable Consistency — 참조 무결성은 검증 도구 몫, 대화상자에 위험만 안내). 대상이 탭으로 열려 있었으면 확인 없이 자동으로 닫음(옛 경로로 저장해서 파일이 되살아나는 사고 방지). WP/DWP 아이콘은 이모지 대신 같은 모양의 선(stroke) SVG로 바꾸고 색만 다르게 줌(WP=기본 텍스트색, DWP=파란 accent색) — 이모지는 폰트에 색이 고정돼 있어 CSS로 색을 바꿀 수 없어서(`tree.ts: fileIconSvg`)
 - [x] 좌측 트리 — GROUP.ITEMS를 재귀 조회해 그룹 계층 렌더링 (`frontend/src/projectTree.ts` — 구조 추출기의 SQLite 대신, 매번 `.loadstar/GROUP` 전체를 읽어 즉석 구성하는 임시 대역. `04.META_EXTRACTION.md §6.2`의 `GROUP_ITEM` 엣지 조회는 구조 추출기 완료 후 이 경로를 대체)
 - [x] 좌측 트리 — 어떤 GROUP에도 속하지 않은 WP/DWP/OTHER는 별도 섹션 없이 트리 루트에 그대로 표시 (`appendix/GROUP.md`에 명시된 트레이드오프 대응)
 - [ ] 탭 관리 — 파일 열기/닫기/전환, 탭 하나당 뷰어 인스턴스 하나
