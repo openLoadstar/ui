@@ -2,7 +2,7 @@
 
 import type { ElementFormat, TreeNode } from "./tree";
 import { readProjectFile, writeProjectFile, readExternalFile, deleteProjectFile } from "./fs";
-import { renderMarkdown, renderPlainText } from "./viewer";
+import { renderMarkdown, renderPlainText, renderHtmlFile } from "./viewer";
 import { renderGroupInfo } from "./groupInfoView";
 import { validateContent } from "./validate";
 import { logInfo, logError } from "./log";
@@ -347,13 +347,19 @@ export class TabManager {
                 }
             });
         } else {
-            body.innerHTML = `<div class="md-viewer"></div>`;
-            const viewerEl = body.querySelector<HTMLElement>(".md-viewer")!;
+            // OTHER는 확장자가 자유(`02.ELEMENT_FORMAT.md` §1)라 .md가 아닐 수 있다 —
+            // csv/json 등을 마크다운 렌더러에 태우면 문법이 오인식돼 원문이 깨진다.
+            const lowerPath = tab.path.toLowerCase();
+            const isHtml = lowerPath.endsWith(".html") || lowerPath.endsWith(".htm");
+            // .md-viewer는 본문 가독성을 위해 max-width로 줄 길이를 제한한다 — html은
+            // 그 폭 제한 없이 창 전체를 쓰도록 별도 컨테이너(.html-viewer)를 쓴다.
+            body.innerHTML = isHtml ? `<div class="html-viewer"></div>` : `<div class="md-viewer"></div>`;
+            const viewerEl = body.querySelector<HTMLElement>(isHtml ? ".html-viewer" : ".md-viewer")!;
             try {
-                // OTHER는 확장자가 자유(`02.ELEMENT_FORMAT.md` §1)라 .md가 아닐 수 있다 —
-                // csv/json 등을 마크다운 렌더러에 태우면 문법이 오인식돼 원문이 깨진다.
-                if (tab.path.toLowerCase().endsWith(".md")) {
+                if (lowerPath.endsWith(".md")) {
                     await renderMarkdown(viewerEl, tab.content);
+                } else if (isHtml) {
+                    renderHtmlFile(viewerEl, tab.content);
                 } else {
                     renderPlainText(viewerEl, tab.content);
                 }

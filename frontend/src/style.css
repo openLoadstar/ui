@@ -468,6 +468,19 @@ body.resizing-col {
     height: auto;
 }
 
+.html-viewer {
+    width: 100%; /* .md-viewer의 860px 본문 폭 제한을 안 받는 별도 컨테이너 — 창 폭 그대로 사용 */
+}
+
+.html-file-frame {
+    display: block;
+    width: 100%;
+    height: 80vh;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff; /* srcdoc 문서가 배경을 안 정하면 흰 배경이 기본값 */
+}
+
 /* --- GROUP 정보 탭 --- */
 .group-info {
     max-width: 640px;

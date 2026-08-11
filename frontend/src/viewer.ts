@@ -38,6 +38,29 @@ export function renderPlainText(container: HTMLElement, raw: string): void {
     container.innerHTML = `<pre>${md.utils.escapeHtml(raw)}</pre>`;
 }
 
+/**
+ * OTHER의 자기완결형 html 파일(인라인 CSS/JS만 쓰고 외부 리소스를 상대경로로
+ * 참조하지 않는 것)을 iframe으로 그대로 렌더링한다. 뷰어 전용 — 수정 기능은
+ * 필요 없다는 요구사항이라 tabs.ts의 edit 모드(범용 textarea)는 그대로 두고
+ * 건드리지 않았다.
+ *
+ * `srcdoc`을 쓰는 이유: `src="file://..."`는 웹뷰의 크로스 오리진 정책에 걸릴
+ * 수 있는 반면, `srcdoc`은 완전히 격리된 문서를 그 자리에서 그려서 문제가 없다.
+ * 대신 기준 경로가 없어 상대경로 리소스(`<img src="./x.png">` 등)는 못 불러온다
+ * — 지금 OTHER에 있는 html들은 전부 인라인이라 해당 없음.
+ *
+ * sandbox="allow-scripts"만 준다: 문서 내 인터랙션(예: 비용 계산기 입력창)은
+ * 동작해야 하지만, 부모 앱 네비게이션·팝업·스토리지 접근 등은 막아둔다.
+ */
+export function renderHtmlFile(container: HTMLElement, raw: string): void {
+    container.innerHTML = "";
+    const iframe = document.createElement("iframe");
+    iframe.className = "html-file-frame";
+    iframe.sandbox.add("allow-scripts");
+    iframe.srcdoc = raw;
+    container.appendChild(iframe);
+}
+
 /** raw md 텍스트를 container에 렌더링하고, 포함된 mermaid 블록을 다이어그램으로 표시한다. */
 export async function renderMarkdown(container: HTMLElement, raw: string): Promise<void> {
     ensureMermaidInitialized();
