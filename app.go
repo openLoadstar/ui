@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -413,12 +414,19 @@ func (a *App) addRecentProject(dir string) error {
 
 var validFormatDirs = map[string]bool{"WP": true, "DWP": true, "GROUP": true, "OTHER": true}
 
-// ListFormatFiles lists the .md filenames directly under .loadstar/<format>/,
-// returned as project-relative paths (e.g. ".loadstar/GROUP/foo.md") using
-// forward slashes to match the convention ReadFile/WriteFile already expect.
+// ListFormatFiles lists the element filenames directly under
+// .loadstar/<format>/, returned as project-relative paths (e.g.
+// ".loadstar/GROUP/foo.md") using forward slashes to match the convention
+// ReadFile/WriteFile already expect.
 // This is a purpose-built stand-in for the 구조 추출기 (structural extractor,
 // not yet built) — it does no parsing, just a directory listing. Expect it to
 // be superseded once that WP lands.
+//
+// WP/DWP/GROUP always use the `[FORMAT][VER][DATE]이름.md` naming convention
+// (`02.ELEMENT_FORMAT.md` §2), so those three stay filtered to ".md". OTHER is
+// the spec's one exception (§1) — free-form filenames, not necessarily
+// markdown — so its listing is filtered against the user's configured
+// extension allowlist (GetOtherExtensions) instead of a hardcoded suffix.
 func (a *App) ListFormatFiles(format string) ([]string, error) {
 	if a.projectRoot == "" {
 		return nil, errors.New("열려 있는 프로젝트가 없습니다")
@@ -434,14 +442,145 @@ func (a *App) ListFormatFiles(format string) ([]string, error) {
 		}
 		return nil, err
 	}
+
+	var allowed map[string]bool
+	if format == "OTHER" {
+		exts, err := a.GetOtherExtensions()
+		if err != nil {
+			return nil, err
+		}
+		allowed = make(map[string]bool, len(exts))
+		for _, e := range exts {
+			allowed[e] = true
+		}
+	}
+
 	files := []string{}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+		if e.IsDir() {
+			continue
+		}
+		if format == "OTHER" {
+			if !allowed[strings.ToLower(filepath.Ext(e.Name()))] {
+				continue
+			}
+		} else if !strings.HasSuffix(e.Name(), ".md") {
 			continue
 		}
 		files = append(files, path.Join(".loadstar", format, e.Name()))
 	}
 	return files, nil
+}
+
+// defaultOtherExtensions is what a fresh install shows for OTHER before the
+// user ever opens the settings dialog — common plain-text formats. ".md" is
+// included so OTHER files that happen to be markdown (allowed, just not
+// required — §1) keep showing without a config change.
+var defaultOtherExtensions = []string{".md", ".txt", ".json", ".csv", ".yaml", ".yml", ".log", ".xml"}
+
+// otherExtensionsPath lives under appDataDir, not the project root: this is a
+// tool-wide preference (전역 설정), not something that should vary per
+// project or need re-configuring after switching projects.
+func otherExtensionsPath() (string, error) {
+	dir, err := appDataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "other_extensions.json"), nil
+}
+
+// GetOtherExtensions returns the extensions (lowercase, leading dot, e.g.
+// ".csv") that ListFormatFiles("OTHER") allows through. Falls back to
+// defaultOtherExtensions if the user has never saved a preference.
+func (a *App) GetOtherExtensions() ([]string, error) {
+	path, err := otherExtensionsPath()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return append([]string(nil), defaultOtherExtensions...), nil
+		}
+		return nil, err
+	}
+	var exts []string
+	if err := json.Unmarshal(data, &exts); err != nil {
+		log.Printf("GetOtherExtensions: corrupt settings file, falling back to defaults: %v", err)
+		return append([]string(nil), defaultOtherExtensions...), nil
+	}
+	return exts, nil
+}
+
+// SetOtherExtensions saves the user's OTHER-extension allowlist. Entries are
+// normalized to "lowercase, leading dot" and deduplicated so callers (and the
+// settings dialog) don't need to worry about ".CSV" vs "csv" vs ".csv"
+// producing three different entries.
+func (a *App) SetOtherExtensions(exts []string) error {
+	path, err := otherExtensionsPath()
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]bool, len(exts))
+	normalized := make([]string, 0, len(exts))
+	for _, e := range exts {
+		e = strings.ToLower(strings.TrimSpace(e))
+		if e == "" {
+			continue
+		}
+		if !strings.HasPrefix(e, ".") {
+			e = "." + e
+		}
+		if seen[e] {
+			continue
+		}
+		seen[e] = true
+		normalized = append(normalized, e)
+	}
+	data, err := json.MarshalIndent(normalized, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("SetOtherExtensions: failed to write settings: %v", err)
+		return err
+	}
+	return nil
+}
+
+// ListOtherFileExtensions scans the open project's .loadstar/OTHER/ (every
+// file, ignoring the current allowlist) and returns the distinct extensions
+// actually present, sorted. The settings dialog uses this to offer
+// project-specific toggles beyond defaultOtherExtensions — e.g. surfacing
+// ".pptx" as a pickable option only when an OTHER folder actually has one,
+// instead of listing every extension that has ever existed anywhere.
+func (a *App) ListOtherFileExtensions() ([]string, error) {
+	if a.projectRoot == "" {
+		return nil, errors.New("열려 있는 프로젝트가 없습니다")
+	}
+	dir := filepath.Join(a.projectRoot, ".loadstar", "OTHER")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+	seen := map[string]bool{}
+	exts := []string{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(e.Name()))
+		if ext == "" || seen[ext] {
+			continue
+		}
+		seen[ext] = true
+		exts = append(exts, ext)
+	}
+	sort.Strings(exts)
+	return exts, nil
 }
 
 // CreateElement scaffolds a new WP/DWP/GROUP file in the open project and

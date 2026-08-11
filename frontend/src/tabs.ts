@@ -2,7 +2,7 @@
 
 import type { ElementFormat, TreeNode } from "./tree";
 import { readProjectFile, writeProjectFile, readExternalFile, deleteProjectFile } from "./fs";
-import { renderMarkdown } from "./viewer";
+import { renderMarkdown, renderPlainText } from "./viewer";
 import { renderGroupInfo } from "./groupInfoView";
 import { validateContent } from "./validate";
 import { logInfo, logError } from "./log";
@@ -350,7 +350,13 @@ export class TabManager {
             body.innerHTML = `<div class="md-viewer"></div>`;
             const viewerEl = body.querySelector<HTMLElement>(".md-viewer")!;
             try {
-                await renderMarkdown(viewerEl, tab.content);
+                // OTHER는 확장자가 자유(`02.ELEMENT_FORMAT.md` §1)라 .md가 아닐 수 있다 —
+                // csv/json 등을 마크다운 렌더러에 태우면 문법이 오인식돼 원문이 깨진다.
+                if (tab.path.toLowerCase().endsWith(".md")) {
+                    await renderMarkdown(viewerEl, tab.content);
+                } else {
+                    renderPlainText(viewerEl, tab.content);
+                }
             } catch (err) {
                 logError(`렌더링 실패: ${tab.path}`, err);
                 viewerEl.innerHTML = `<div class="viewer-empty">⚠️ 렌더링 중 오류가 발생했습니다. 콘솔/로그를 확인하세요.</div>`;

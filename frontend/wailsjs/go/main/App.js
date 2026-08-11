@@ -26,6 +26,10 @@ export function GetDefaultBrowseDir() {
   return window['go']['main']['App']['GetDefaultBrowseDir']();
 }
 
+export function GetOtherExtensions() {
+  return window['go']['main']['App']['GetOtherExtensions']();
+}
+
 export function GetRecentFiles() {
   return window['go']['main']['App']['GetRecentFiles']();
 }
@@ -40,6 +44,10 @@ export function Greet(arg1) {
 
 export function ListFormatFiles(arg1) {
   return window['go']['main']['App']['ListFormatFiles'](arg1);
+}
+
+export function ListOtherFileExtensions() {
+  return window['go']['main']['App']['ListOtherFileExtensions']();
 }
 
 export function LogFrontendError(arg1) {
@@ -60,6 +68,10 @@ export function ReadFile(arg1) {
 
 export function RenameFile(arg1, arg2) {
   return window['go']['main']['App']['RenameFile'](arg1, arg2);
+}
+
+export function SetOtherExtensions(arg1) {
+  return window['go']['main']['App']['SetOtherExtensions'](arg1);
 }
 
 export function WriteFile(arg1, arg2) {

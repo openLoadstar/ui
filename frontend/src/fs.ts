@@ -18,6 +18,9 @@ import {
     DeleteFile as goDeleteFile,
     CreateElement as goCreateElement,
     RenameFile as goRenameFile,
+    GetOtherExtensions as goGetOtherExtensions,
+    SetOtherExtensions as goSetOtherExtensions,
+    ListOtherFileExtensions as goListOtherFileExtensions,
 } from "../wailsjs/go/main/App";
 import type { main } from "../wailsjs/go/models";
 // 개발 중 브라우저 미리보기 전용 — 실제 WP 파일을 그대로 읽어와 목업으로 쓴다(내용 중복 없음).
@@ -161,6 +164,37 @@ export async function listFormatFiles(format: string): Promise<string[]> {
         return goListFormatFiles(format);
     }
     return mockDirListing[format] ?? [];
+}
+
+// OTHER는 `[FORMAT][VER][DATE]이름.md` 명명 규칙이 면제되는 유일한 FORMAT이라
+// (`02.ELEMENT_FORMAT.md` §1), 확장자 무관하게 전부 보여주면 바이너리 파일까지
+// 미리보기가 깨진 채로 트리에 섞인다. 대신 전역 설정(허용 확장자 목록)으로
+// 걸러서 보여준다 — 기본값은 텍스트로 안전하게 열리는 확장자들.
+let mockOtherExtensions = [".md", ".txt", ".json", ".csv", ".yaml", ".yml", ".log", ".xml"];
+
+/** 현재 OTHER 목록에 적용 중인 허용 확장자(소문자, `.` 포함)를 가져온다. */
+export async function getOtherExtensions(): Promise<string[]> {
+    if (isWailsRuntimeAvailable()) {
+        return goGetOtherExtensions();
+    }
+    return mockOtherExtensions;
+}
+
+/** OTHER 목록에 적용할 허용 확장자를 저장한다(전역 설정 — 프로젝트 무관). */
+export async function setOtherExtensions(exts: string[]): Promise<void> {
+    if (isWailsRuntimeAvailable()) {
+        await goSetOtherExtensions(exts);
+        return;
+    }
+    mockOtherExtensions = exts;
+}
+
+/** 현재 프로젝트의 .loadstar/OTHER/에 실제로 존재하는 확장자 목록(필터 무관)을 가져온다. */
+export async function listOtherFileExtensions(): Promise<string[]> {
+    if (isWailsRuntimeAvailable()) {
+        return goListOtherFileExtensions();
+    }
+    return [];
 }
 
 // 브라우저 미리보기 전용 — 실제 스캐폴딩 내용은 Go 쪽(app.go: CreateElement,

@@ -7,6 +7,7 @@ import { logInfo, logError } from "./log";
 import { openBrowseModal } from "./browseModal";
 import { renderProjectPickerScreen, openProjectPickerModal } from "./projectPicker";
 import { openGroupEditor } from "./groupEditor";
+import { openOtherFilterSettings } from "./otherFilterSettings";
 import { createElement, readProjectFile, writeProjectFile, deleteProjectFile, renameProjectFile } from "./fs";
 import { loadAllGroups } from "./groupIndex";
 import { parseGroupItems, setGroupItems } from "./groupFile";
@@ -31,6 +32,7 @@ function startExplorer(projectRoot: string): void {
             <span class="menu-item" data-menu="edit">편집</span>
             <div class="menu-dropdown" id="edit-menu-dropdown" hidden>
               <div class="menu-dropdown-item" data-role="group-editor">그룹편집</div>
+              <div class="menu-dropdown-item" data-role="other-filter-settings">OTHER 확장자 설정</div>
             </div>
           </div>
           <span class="menu-item" data-action="view">보기</span>
@@ -325,6 +327,11 @@ function startExplorer(projectRoot: string): void {
     editDropdown.querySelector<HTMLElement>('[data-role="group-editor"]')!.addEventListener("click", () => {
         closeAllDropdowns();
         openGroupEditor(() => void refreshTreeAndTimestamp());
+    });
+
+    editDropdown.querySelector<HTMLElement>('[data-role="other-filter-settings"]')!.addEventListener("click", () => {
+        closeAllDropdowns();
+        openOtherFilterSettings(() => void refreshTreeAndTimestamp());
     });
 
     document.querySelector<HTMLElement>('[data-role="new-group"]')!.addEventListener("click", () => {

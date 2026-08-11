@@ -29,6 +29,15 @@ function ensureMermaidInitialized(): void {
     mermaidInitialized = true;
 }
 
+/**
+ * OTHER의 비-markdown 텍스트 파일(csv/json/txt 등)을 원문 그대로 보여준다.
+ * markdown-it을 안 태우는 이유: 콤마·파이프·언더스코어 같은 CSV/코드 특유의
+ * 문자가 마크다운 문법(표, 강조 등)으로 오인식돼 원문이 깨져 보인다.
+ */
+export function renderPlainText(container: HTMLElement, raw: string): void {
+    container.innerHTML = `<pre>${md.utils.escapeHtml(raw)}</pre>`;
+}
+
 /** raw md 텍스트를 container에 렌더링하고, 포함된 mermaid 블록을 다이어그램으로 표시한다. */
 export async function renderMarkdown(container: HTMLElement, raw: string): Promise<void> {
     ensureMermaidInitialized();

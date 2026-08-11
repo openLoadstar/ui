@@ -14,6 +14,8 @@ export function DeleteFile(arg1:string):Promise<void>;
 
 export function GetDefaultBrowseDir():Promise<string>;
 
+export function GetOtherExtensions():Promise<Array<string>>;
+
 export function GetRecentFiles():Promise<Array<main.RecentFile>>;
 
 export function GetRecentProjects():Promise<Array<main.RecentProject>>;
@@ -21,6 +23,8 @@ export function GetRecentProjects():Promise<Array<main.RecentProject>>;
 export function Greet(arg1:string):Promise<string>;
 
 export function ListFormatFiles(arg1:string):Promise<Array<string>>;
+
+export function ListOtherFileExtensions():Promise<Array<string>>;
 
 export function LogFrontendError(arg1:string):Promise<void>;
 
@@ -31,5 +35,7 @@ export function ReadExternalFile(arg1:string):Promise<string>;
 export function ReadFile(arg1:string):Promise<string>;
 
 export function RenameFile(arg1:string,arg2:string):Promise<void>;
+
+export function SetOtherExtensions(arg1:Array<string>):Promise<void>;
 
 export function WriteFile(arg1:string,arg2:string):Promise<void>;
