@@ -111,10 +111,8 @@ export function openProjectPickerModal(onOpened: (root: string) => void): void {
     `;
     document.body.appendChild(overlay);
 
+    // 대화상자는 화면 안 버튼(×)으로만 닫힌다 — 바깥 클릭·Escape로는 안 닫음(의도적).
     const close = () => overlay.remove();
-    overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) close();
-    });
     overlay.querySelector(".modal-close")!.addEventListener("click", close);
 
     const errorEl = overlay.querySelector<HTMLElement>(".picker-error")!;

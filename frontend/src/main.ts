@@ -1,6 +1,8 @@
 import "./style.css";
-import { renderTree, filterTreeByStatus, renameFilenameKeepingPrefix, type TreeNode } from "./tree";
-import { buildProjectTree } from "./projectTree";
+import { renderTree, renameFilenameKeepingPrefix, resolveOtherFilename, type TreeNode } from "./tree";
+import type { ViewMode } from "./viewMode";
+import { groupTreeView } from "./groupTreeView";
+import { dateTreeView } from "./dateTreeView";
 import { TabManager } from "./tabs";
 import { initSplitter } from "./splitter";
 import { logInfo, logError } from "./log";
@@ -8,10 +10,15 @@ import { openBrowseModal } from "./browseModal";
 import { renderProjectPickerScreen, openProjectPickerModal } from "./projectPicker";
 import { openGroupEditor } from "./groupEditor";
 import { openOtherFilterSettings } from "./otherFilterSettings";
-import { createElement, readProjectFile, writeProjectFile, deleteProjectFile, renameProjectFile } from "./fs";
+import { openRenameDialog } from "./renameDialog";
+import { openDeleteDialog } from "./deleteDialog";
+import { openReindexDialog } from "./reindexDialog";
+import { createElement, readProjectFile, writeProjectFile, renameProjectFile, reindexProject } from "./fs";
 import { loadAllGroups } from "./groupIndex";
 import { parseGroupItems, setGroupItems } from "./groupFile";
-import { STATUS_ORDER, STATUS_LABELS, STATUS_COLORS, type StatusBucket } from "./wpStatus";
+
+// 새 뷰(검색 등)는 여기 추가하면 된다 — `[WP][2.0][2026.08.13]뷰 전환 아키텍처.md` 참조.
+const VIEWS: ViewMode[] = [groupTreeView, dateTreeView];
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -43,7 +50,8 @@ function startExplorer(projectRoot: string): void {
           <button class="tb-btn" data-role="new-group">+ GROUP</button>
           <button class="tb-btn" data-action="reindex">⟳ 재색인</button>
           <div class="toolbar-spacer"></div>
-          <div id="status-filter" class="status-filter"></div>
+          <select id="view-switcher" class="view-switcher"></select>
+          <div id="view-filter-panel" class="status-filter"></div>
         </div>
         <div id="main">
           <div id="tree-panel" class="panel">
@@ -65,7 +73,8 @@ function startExplorer(projectRoot: string): void {
     const treePanel = document.querySelector<HTMLDivElement>("#tree-panel")!;
     const treeBody = document.querySelector<HTMLDivElement>("#tree-body")!;
     const treeUpdatedAt = document.querySelector<HTMLElement>(".tree-updated-at")!;
-    const statusFilterEl = document.querySelector<HTMLDivElement>("#status-filter")!;
+    const viewSwitcherEl = document.querySelector<HTMLSelectElement>("#view-switcher")!;
+    const viewFilterPanelEl = document.querySelector<HTMLDivElement>("#view-filter-panel")!;
     const splitter = document.querySelector<HTMLDivElement>("#splitter")!;
     const tabBar = document.querySelector<HTMLDivElement>("#tab-bar")!;
     const tabContent = document.querySelector<HTMLDivElement>("#tab-content")!;
@@ -80,10 +89,11 @@ function startExplorer(projectRoot: string): void {
         treeUpdatedAt.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} updated`;
     }
 
-    // 마지막으로 불러온(미필터) 트리. 체크박스만 바꿀 때는 재조회 없이 이걸 다시 필터링해서 그린다.
-    let latestProjectTree: TreeNode[] = [];
-    const activeStatuses = new Set<StatusBucket>(STATUS_ORDER);
-    // 접힌 GROUP의 path 집합 — 재렌더링(필터 토글, 업데이트 등)에도 유지되도록 트리 데이터가 아니라 여기 따로 둔다.
+    // 현재 뷰가 걸러서 넘겨준 결과. 필터 변경은 재조회가 아니라 이걸 갱신하는 것뿐
+    // (`[WP][2.0][2026.08.13]뷰 전환 아키텍처.md` COMMENT — 동기화 이슈 유예 결정).
+    let currentView: ViewMode = VIEWS[0];
+    let currentFilteredNodes: TreeNode[] = [];
+    // 접힌 GROUP의 path 집합 — 재렌더링(필터 변경, 업데이트 등)에도 유지되도록 트리 데이터가 아니라 여기 따로 둔다.
     const collapsedGroupPaths = new Set<string>();
 
     function onTreeNodeSelect(node: TreeNode): void {
@@ -98,7 +108,7 @@ function startExplorer(projectRoot: string): void {
     }
 
     function renderFilteredTree(): void {
-        renderTree(treeBody, filterTreeByStatus(latestProjectTree, activeStatuses), {
+        renderTree(treeBody, currentFilteredNodes, {
             onSelect: onTreeNodeSelect,
             onContextMenu: openTreeContextMenu,
             onToggleCollapse: toggleGroupCollapse,
@@ -106,32 +116,31 @@ function startExplorer(projectRoot: string): void {
         });
     }
 
-    statusFilterEl.innerHTML = STATUS_ORDER.map(
-        (status) => `
-      <label class="status-filter-item" data-status="${status}">
-        <input type="checkbox" checked />
-        <span class="status-dot" style="background:${STATUS_COLORS[status]}"></span>
-        ${STATUS_LABELS[status]}
-      </label>`,
-    ).join("");
+    function onFilterChange(filtered: TreeNode[]): void {
+        currentFilteredNodes = filtered;
+        renderFilteredTree();
+    }
 
-    statusFilterEl.querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((checkbox) => {
-        checkbox.addEventListener("change", () => {
-            const status = checkbox.closest<HTMLElement>("[data-status]")!.dataset.status as StatusBucket;
-            if (checkbox.checked) activeStatuses.add(status);
-            else activeStatuses.delete(status);
-            renderFilteredTree();
-        });
+    // 지금은 뷰가 하나뿐이라 사실상 아무 효과 없지만, 뷰가 늘어났을 때 바로 쓰도록 구조는 갖춰둔다.
+    viewSwitcherEl.innerHTML = VIEWS.map((v) => `<option value="${v.id}">${v.label}</option>`).join("");
+    viewSwitcherEl.addEventListener("change", () => {
+        const view = VIEWS.find((v) => v.id === viewSwitcherEl.value);
+        if (view) {
+            currentView = view;
+            void renderCurrentTree();
+        }
     });
 
     async function renderCurrentTree(): Promise<void> {
+        let nodes: TreeNode[] = [];
         try {
-            latestProjectTree = await buildProjectTree();
+            nodes = await currentView.buildNodes();
         } catch (err) {
             logError("트리 구성 실패", err);
-            latestProjectTree = [];
         }
-        renderFilteredTree();
+        // renderFilterPanel은 계약상 마운트 시 onFilterChange를 한 번 호출한다 —
+        // 그게 currentFilteredNodes를 채우고 트리 렌더까지 트리거한다.
+        currentView.renderFilterPanel(viewFilterPanelEl, nodes, onFilterChange);
     }
 
     async function refreshTreeAndTimestamp(): Promise<void> {
@@ -179,6 +188,10 @@ function startExplorer(projectRoot: string): void {
     document.querySelector<HTMLElement>('[data-action="new-wp"]')!.addEventListener("click", () => void createAndOpenElement("WP"));
     document.querySelector<HTMLElement>('[data-action="new-dwp"]')!.addEventListener("click", () => void createAndOpenElement("DWP"));
 
+    document.querySelector<HTMLElement>('[data-action="reindex"]')!.addEventListener("click", () => {
+        openReindexDialog({ onReindex: reindexProject });
+    });
+
     // --- WP/DWP 우클릭 메뉴(이름변경/삭제) ---
 
     function closeTreeContextMenu(): void {
@@ -198,11 +211,11 @@ function startExplorer(projectRoot: string): void {
         document.body.appendChild(menu);
         menu.querySelector('[data-role="rename"]')!.addEventListener("click", () => {
             closeTreeContextMenu();
-            void renameElement(node);
+            renameElement(node);
         });
         menu.querySelector('[data-role="delete"]')!.addEventListener("click", () => {
             closeTreeContextMenu();
-            void deleteElement(node);
+            deleteElement(node);
         });
         // 지금 이 클릭 이벤트가 document까지 버블링돼서 바로 닫히지 않도록 다음 tick에 등록.
         setTimeout(() => document.addEventListener("click", closeTreeContextMenu, { once: true }), 0);
@@ -221,69 +234,51 @@ function startExplorer(projectRoot: string): void {
         }
     }
 
-    async function renameElement(node: TreeNode): Promise<void> {
-        const newName = prompt(`새 이름:`, node.name);
-        if (newName === null) return;
-        const trimmed = newName.trim();
-        if (!trimmed || trimmed === node.name) return;
-
+    function renameElement(node: TreeNode): void {
         const filename = node.path.split("/").pop()!;
-        const newFilename = renameFilenameKeepingPrefix(filename, trimmed);
-        if (!newFilename) {
-            alert("파일명 형식을 해석할 수 없어 이름을 바꿀 수 없습니다.");
-            return;
-        }
-        const dir = node.path.slice(0, node.path.length - filename.length);
-        const newPath = `${dir}${newFilename}`;
-
-        if (
-            !confirm(
-                `"${node.name}" → "${trimmed}"로 이름을 바꿀까요?\n\n이 파일을 참조하는 다른 WP의 CONNECTIONS는 자동으로 갱신되지 않습니다(나중에 검증 도구가 깨진 참조로 감지). 소속 GROUP은 자동으로 갱신됩니다.`,
-            )
-        ) {
-            return;
-        }
-
-        try {
-            await renameProjectFile(node.path, newPath);
-            await updateGroupMemberships(filename, newFilename);
-            logInfo(`이름 변경: ${node.path} → ${newPath}`);
-        } catch (err) {
-            logError(`이름 변경 실패: ${node.path}`, err);
-            alert(`이름 변경 실패: ${err instanceof Error ? err.message : String(err)}`);
-            return;
-        }
-
-        await tabs.closeByPath(node.path);
-        await refreshTreeAndTimestamp();
+        // OTHER는 `[FORMAT][VER][DATE]` 접두어 규칙이 면제라(§02.ELEMENT_FORMAT.md §1)
+        // 붙이고 뗄 접두어 자체가 없다 — 입력값이 곧 새 파일명(확장자 포함).
+        const resolveNewFilename =
+            node.format === "OTHER"
+                ? resolveOtherFilename
+                : (newDisplayName: string) => renameFilenameKeepingPrefix(filename, newDisplayName);
+        // OTHER는 node.name이 표시용으로 ".md"를 뗀 값일 수 있다(tree.ts:parseElementFilename) —
+        // 여기선 입력값이 그대로 새 파일명이 되니, 원본 확장자를 잃지 않도록 전체 파일명을 채운다.
+        openRenameDialog({
+            currentFilename: filename,
+            currentDisplayName: node.format === "OTHER" ? filename : node.name,
+            resolveNewFilename,
+            onRename: async (newFilename) => {
+                const dir = node.path.slice(0, node.path.length - filename.length);
+                const newPath = `${dir}${newFilename}`;
+                await renameProjectFile(node.path, newPath);
+                await updateGroupMemberships(filename, newFilename);
+                logInfo(`이름 변경: ${node.path} → ${newPath}`);
+                await tabs.closeByPath(node.path);
+                await refreshTreeAndTimestamp();
+            },
+        });
     }
 
-    async function deleteElement(node: TreeNode): Promise<void> {
-        if (
-            !confirm(
-                `"${node.name}"(${node.format})을 삭제할까요?\n\n파일이 실제로 삭제되며 되돌릴 수 없습니다. 이 파일을 참조하는 다른 WP의 CONNECTIONS는 자동으로 정리되지 않습니다(나중에 검증 도구가 깨진 참조로 감지). 소속 GROUP에서는 자동으로 제거됩니다.`,
-            )
-        ) {
-            return;
-        }
-
-        const filename = node.path.split("/").pop()!;
-        try {
-            await deleteProjectFile(node.path);
-            await updateGroupMemberships(filename, null);
-            logInfo(`삭제: ${node.path}`);
-        } catch (err) {
-            logError(`삭제 실패: ${node.path}`, err);
-            alert(`삭제 실패: ${err instanceof Error ? err.message : String(err)}`);
-            return;
-        }
-
-        await tabs.closeByPath(node.path);
-        await refreshTreeAndTimestamp();
+    function deleteElement(node: TreeNode): void {
+        // "삭제"는 실제로 지우지 않고 .del을 덧붙여 목록에서만 숨긴다(deleteDialog.ts 참조) —
+        // 대부분 설계 문서라 진짜 삭제는 탐색기에서 직접 하는 게 안전하다는 판단.
+        // GROUP의 ITEMS는 일부러 안 건드린다 — 탐색기에서 .del만 떼어 되돌리면 소속도 같이 복구되도록.
+        openDeleteDialog({
+            displayName: node.name,
+            format: node.format,
+            onDelete: async () => {
+                const delPath = `${node.path}.del`;
+                await renameProjectFile(node.path, delPath);
+                logInfo(`삭제(숨김): ${node.path} → ${delPath}`);
+                await tabs.closeByPath(node.path);
+                await refreshTreeAndTimestamp();
+            },
+        });
     }
 
     document.querySelectorAll<HTMLElement>("[data-action]").forEach((el) => {
-        if (el.dataset.action === "new-wp" || el.dataset.action === "new-dwp") return; // 위에서 별도 처리
+        if (el.dataset.action === "new-wp" || el.dataset.action === "new-dwp" || el.dataset.action === "reindex") return; // 위에서 별도 처리
         el.addEventListener("click", () => {
             const action = el.dataset.action;
             logInfo(`[TODO] action not yet implemented: ${action}`);

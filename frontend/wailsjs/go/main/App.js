@@ -42,6 +42,10 @@ export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }
 
+export function ListAllFilesWithModTime() {
+  return window['go']['main']['App']['ListAllFilesWithModTime']();
+}
+
 export function ListFormatFiles(arg1) {
   return window['go']['main']['App']['ListFormatFiles'](arg1);
 }
@@ -64,6 +68,10 @@ export function ReadExternalFile(arg1) {
 
 export function ReadFile(arg1) {
   return window['go']['main']['App']['ReadFile'](arg1);
+}
+
+export function Reindex() {
+  return window['go']['main']['App']['Reindex']();
 }
 
 export function RenameFile(arg1, arg2) {

@@ -27,7 +27,6 @@ var notYetImplementedReason = map[string]string{
 	"todo":     "온디맨드 도메인 조회기 WP 대기 중",
 	"issues":   "온디맨드 도메인 조회기 WP 대기 중",
 	"validate": "Validator 모듈 대기 중 (구조 추출기 WP에서 결합 방식 결정 예정)",
-	"reindex":  "구조 추출기 WP 대기 중",
 }
 
 // runCLI dispatches a subcommand and returns a process exit code.
@@ -38,7 +37,9 @@ func runCLI(args []string) int {
 		return cmdCreate(args[1:])
 	case "show":
 		return cmdShow(args[1:])
-	case "todo", "issues", "validate", "reindex":
+	case "reindex":
+		return cmdReindex(args[1:])
+	case "todo", "issues", "validate":
 		fmt.Printf("loadstar %s: 아직 미구현 — %s\n", args[0], notYetImplementedReason[args[0]])
 		return 1
 	case "help", "-h", "--help":
@@ -61,7 +62,33 @@ func printUsage() {
   loadstar todo [all|standby|active|done]   (미구현)
   loadstar issues                           (미구현)
   loadstar validate                         (미구현)
-  loadstar reindex                          (미구현)`)
+  loadstar reindex                          구조 추출기 실행 — .loadstar/.cache/index.db 재생성`)
+}
+
+// cmdReindex implements `loadstar reindex` (`05.CLI_SPEC.md` §2) — 구조
+// 추출기(①)를 즉시 수동 실행해 SQLite를 재생성한다(extractor.go:Reindex).
+func cmdReindex(args []string) int {
+	root, err := findProjectRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	stats, err := Reindex(root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "재색인 실패: %v\n", err)
+		return 1
+	}
+
+	fmt.Printf("재색인 완료 — %s\n", filepath.Join(root, ".loadstar", ".cache", "index.db"))
+	fmt.Printf("  노드 %d개\n", stats.Nodes)
+	fmt.Printf("  엣지 %d개", stats.Edges)
+	if stats.BrokenEdges > 0 {
+		fmt.Printf(" (깨진 참조 %d개 포함)\n", stats.BrokenEdges)
+	} else {
+		fmt.Println()
+	}
+	return 0
 }
 
 // statusCodeOrder는 `appendix/WP.md`의 STATUS 코드 표기 순서 그대로.

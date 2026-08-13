@@ -21,6 +21,8 @@ import {
     GetOtherExtensions as goGetOtherExtensions,
     SetOtherExtensions as goSetOtherExtensions,
     ListOtherFileExtensions as goListOtherFileExtensions,
+    Reindex as goReindex,
+    ListAllFilesWithModTime as goListAllFilesWithModTime,
 } from "../wailsjs/go/main/App";
 import type { main } from "../wailsjs/go/models";
 // 개발 중 브라우저 미리보기 전용 — 실제 WP 파일을 그대로 읽어와 목업으로 쓴다(내용 중복 없음).
@@ -241,6 +243,29 @@ export async function deleteProjectFile(path: string): Promise<void> {
         const idx = listing.indexOf(path);
         if (idx !== -1) listing.splice(idx, 1);
     }
+}
+
+/** 구조 추출기(extractor.go)를 수동 실행해 .loadstar/.cache/index.db를 재생성한다. */
+export async function reindexProject(): Promise<main.ReindexStats> {
+    if (isWailsRuntimeAvailable()) {
+        return goReindex();
+    }
+    // 브라우저 미리보기엔 실제 파일시스템이 없으니 그럴듯한 고정값으로 대체한다.
+    return { Nodes: 11, Edges: 24, BrokenEdges: 2 } as main.ReindexStats;
+}
+
+/** 날짜별 보기(dateTreeView.ts) 전용 — WP/DWP/GROUP/OTHER 전체를 mtime과 함께 가져온다. */
+export async function listAllFilesWithModTime(): Promise<main.DatedFile[]> {
+    if (isWailsRuntimeAvailable()) {
+        return goListAllFilesWithModTime();
+    }
+    const allPaths = Object.values(mockDirListing).flat();
+    const now = Date.now();
+    return allPaths.map((path, i) => ({
+        path,
+        // 목업이라 실제 mtime이 없다 — 목록 순서대로 하루씩 차이 나는 값을 만들어 정렬 확인용으로 쓴다.
+        modTime: new Date(now - i * 86_400_000).toISOString(),
+    })) as main.DatedFile[];
 }
 
 /** project-relative 경로의 파일을 새 project-relative 경로로 옮긴다. 대상이 이미 있으면 실패. */

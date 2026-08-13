@@ -49,10 +49,8 @@ export function openGroupEditor(onChanged?: () => void): void {
     makeDraggable(box, header);
     makeResizable(box, { minWidth: 560, minHeight: 360 });
 
+    // 대화상자는 화면 안 버튼(×)으로만 닫힌다 — 바깥 클릭·Escape로는 안 닫음(의도적).
     const close = () => overlay.remove();
-    overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) close();
-    });
     overlay.querySelector(".modal-close")!.addEventListener("click", close);
 
     const treeBody = overlay.querySelector<HTMLElement>(".group-editor-tree-body")!;

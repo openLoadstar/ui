@@ -460,6 +460,11 @@ func (a *App) ListFormatFiles(format string) ([]string, error) {
 		if e.IsDir() {
 			continue
 		}
+		// 트리 "삭제"는 실제로 지우지 않고 ".del"을 덧붙여 숨기기만 한다
+		// (main.ts: deleteElement) — 확장자 설정과 무관하게 항상 걸러낸다.
+		if strings.HasSuffix(e.Name(), ".del") {
+			continue
+		}
 		if format == "OTHER" {
 			if !allowed[strings.ToLower(filepath.Ext(e.Name()))] {
 				continue
@@ -602,4 +607,52 @@ func (a *App) CreateElement(format, name string) (string, error) {
 	}
 	log.Printf("CreateElement: ok %q", relPath)
 	return relPath, nil
+}
+
+// Reindex triggers the 구조 추출기(extractor.go:Reindex) manually from the
+// GUI — the same operation `loadstar reindex`(cli.go:cmdReindex) runs, just
+// bound for the toolbar button instead of the CLI.
+func (a *App) Reindex() (ReindexStats, error) {
+	if a.projectRoot == "" {
+		return ReindexStats{}, errors.New("열려 있는 프로젝트가 없습니다")
+	}
+	stats, err := Reindex(a.projectRoot)
+	if err != nil {
+		log.Printf("Reindex: %v", err)
+		return ReindexStats{}, err
+	}
+	log.Printf("Reindex: ok nodes=%d edges=%d broken=%d", stats.Nodes, stats.Edges, stats.BrokenEdges)
+	return stats, nil
+}
+
+// DatedFile pairs a project-relative path with its filesystem mtime — the
+// live-scan data source for "날짜별 보기"(dateTreeView.ts). 재색인이 필요한
+// SQLite index.db가 아니라 매번 실시간으로 다시 읽는다 — 다른 뷰(GROUP 트리)와
+// 신선도 모델을 맞추기 위해서다(`[WP][2.0][2026.08.13]뷰 전환 아키텍처.md` COMMENT).
+type DatedFile struct {
+	Path    string `json:"path"`
+	ModTime string `json:"modTime"`
+}
+
+// ListAllFilesWithModTime lists every WP/DWP/GROUP/OTHER element (같은 필터
+// 규칙 — ListFormatFiles 재사용) with its mtime, for date-order sorting.
+func (a *App) ListAllFilesWithModTime() ([]DatedFile, error) {
+	if a.projectRoot == "" {
+		return nil, errors.New("열려 있는 프로젝트가 없습니다")
+	}
+	result := []DatedFile{}
+	for _, format := range []string{"WP", "DWP", "GROUP", "OTHER"} {
+		paths, err := a.ListFormatFiles(format)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range paths {
+			info, err := os.Stat(filepath.Join(a.projectRoot, p))
+			if err != nil {
+				continue // 조회 사이 지워졌을 수 있음 — 건너뜀
+			}
+			result = append(result, DatedFile{Path: p, ModTime: info.ModTime().Format(time.RFC3339)})
+		}
+	}
+	return result, nil
 }

@@ -12,6 +12,8 @@ export interface TreeNode {
     children?: TreeNode[];
     /** format이 WP일 때만 의미 있음. STATUS 헤더가 없거나 파싱 실패하면 undefined. */
     status?: StatusBucket;
+    /** ISO 8601 mtime. 날짜별 보기(dateTreeView.ts)에서만 채워진다 — 정렬·필터·라벨 표시 겸용. */
+    mtime?: string;
 }
 
 // 이모지(📄 등)는 폰트에 색이 고정된 그림이라 CSS로 못 바꾼다 — WP/DWP는
@@ -39,6 +41,17 @@ export function renameFilenameKeepingPrefix(filename: string, newName: string): 
     const m = filename.match(STRUCTURED_PREFIX);
     if (!m) return null;
     return `${m[1]}${newName}${m[2]}`;
+}
+
+/**
+ * OTHER는 `[FORMAT][VER][DATE]이름` 접두어 규칙이 아예 면제된다
+ * (`02.ELEMENT_FORMAT.md` §1 "유일한 예외") — 그래서 붙이고 뗄 접두어가 없고,
+ * 입력값이 곧 새 파일명이다(확장자 포함). 경로 구분자만 막는다 — 그 외
+ * 나머지(동명 충돌 등)는 RenameFile(Go)가 검사한다.
+ */
+export function resolveOtherFilename(newName: string): string | null {
+    if (!newName || /[\\/]/.test(newName)) return null;
+    return newName;
 }
 
 /**
@@ -95,7 +108,8 @@ function renderNode(node: TreeNode, callbacks: TreeCallbacks): HTMLElement {
     const statusDot = node.status
         ? `<span class="tree-status-dot" style="background:${STATUS_COLORS[node.status]}" title="${STATUS_LABELS[node.status]}"></span>`
         : "";
-    row.innerHTML = `${toggleArrow}<span class="tree-icon">${formatIcon[node.format]}</span>${statusDot}<span class="tree-label">${escapeHtml(node.name)}</span>`;
+    const dateLabel = node.mtime ? `<span class="tree-date-label">${formatDateLabel(node.mtime)}</span>` : "";
+    row.innerHTML = `${toggleArrow}<span class="tree-icon">${formatIcon[node.format]}</span>${statusDot}<span class="tree-label">${escapeHtml(node.name)}</span>${dateLabel}`;
 
     if (isGroup && callbacks.onToggleCollapse) {
         let pendingClick: ReturnType<typeof setTimeout> | null = null;
@@ -117,9 +131,9 @@ function renderNode(node: TreeNode, callbacks: TreeCallbacks): HTMLElement {
         row.addEventListener("click", () => callbacks.onSelect(node));
     }
 
-    // 우클릭 메뉴(이름변경/삭제)는 WP/DWP에만 둔다 — GROUP은 그룹 편집기가 전담,
-    // OTHER는 범위 밖.
-    if (callbacks.onContextMenu && (node.format === "WP" || node.format === "DWP")) {
+    // 우클릭 메뉴(이름변경/삭제)는 WP/DWP/OTHER에 둔다 — GROUP만 예외로 그룹 편집기가 전담.
+    // OTHER는 resolveOtherFilename(main.ts)이 접두어 없는 자유 파일명을 그대로 다룬다.
+    if (callbacks.onContextMenu && node.format !== "GROUP") {
         row.addEventListener("contextmenu", (e) => {
             e.preventDefault();
             callbacks.onContextMenu!(node, e.clientX, e.clientY);
@@ -152,6 +166,14 @@ export function filterTreeByStatus(nodes: TreeNode[], activeStatuses: ReadonlySe
         result.push(children ? { ...node, children } : { ...node });
     }
     return result;
+}
+
+/** ISO 8601 mtime을 트리 라벨용 "YYYY.MM.DD"로 줄인다. */
+function formatDateLabel(iso: string): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
 }
 
 function escapeHtml(text: string): string {

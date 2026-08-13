@@ -46,10 +46,8 @@ export function openOtherFilterSettings(onChanged?: () => void): void {
     makeDraggable(box, header);
     makeResizable(box, { minWidth: 380, minHeight: 320 });
 
+    // 대화상자는 화면 안 버튼(×/취소/저장)으로만 닫힌다 — 바깥 클릭·Escape로는 안 닫음(의도적).
     const close = () => overlay.remove();
-    overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) close();
-    });
     overlay.querySelector(".modal-close")!.addEventListener("click", close);
     overlay.querySelector('[data-role="cancel"]')!.addEventListener("click", close);
 

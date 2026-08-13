@@ -22,6 +22,8 @@ export function GetRecentProjects():Promise<Array<main.RecentProject>>;
 
 export function Greet(arg1:string):Promise<string>;
 
+export function ListAllFilesWithModTime():Promise<Array<main.DatedFile>>;
+
 export function ListFormatFiles(arg1:string):Promise<Array<string>>;
 
 export function ListOtherFileExtensions():Promise<Array<string>>;
@@ -33,6 +35,8 @@ export function OpenProject(arg1:string):Promise<void>;
 export function ReadExternalFile(arg1:string):Promise<string>;
 
 export function ReadFile(arg1:string):Promise<string>;
+
+export function Reindex():Promise<main.ReindexStats>;
 
 export function RenameFile(arg1:string,arg2:string):Promise<void>;
 

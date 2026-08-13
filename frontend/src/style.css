@@ -120,6 +120,16 @@ html, body {
     flex: 1;
 }
 
+.view-switcher {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 13px;
+    margin-right: 10px;
+}
+
 .status-filter {
     display: flex;
     align-items: center;
@@ -274,6 +284,119 @@ body.resizing-col {
 .tree-label {
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.tree-date-label {
+    margin-left: auto;
+    padding-left: 10px;
+    color: var(--text-dim);
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.date-filter-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.date-filter-trigger {
+    padding: 2px 8px;
+    font-size: 12px;
+    min-width: 78px;
+}
+
+/* --- 날짜 선택 팝오버(datePicker.ts) --- */
+.date-picker-popover {
+    position: fixed;
+    z-index: 40;
+    width: 220px;
+    background: var(--panel);
+    border: 1px solid var(--outline);
+    border-radius: 6px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    padding: 8px;
+}
+
+.date-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.date-picker-month {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.date-picker-nav {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.date-picker-nav:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.date-picker-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 11px;
+    margin-bottom: 2px;
+}
+
+.date-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+
+.date-picker-cell {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 12px;
+    padding: 4px 0;
+    cursor: pointer;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.date-picker-cell:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.date-picker-cell--empty {
+    cursor: default;
+}
+
+.date-picker-cell--today {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.date-picker-cell--selected {
+    background: var(--accent);
+    color: #fff;
+}
+
+.date-picker-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
 }
 
 #content-panel {
@@ -831,11 +954,147 @@ body.resizing-col {
     filter: brightness(1.1);
 }
 
+.tb-btn--danger {
+    background: var(--danger);
+    color: #1a1a1a;
+    border-color: var(--danger);
+}
+
+.tb-btn--danger:hover {
+    filter: brightness(1.1);
+}
+
+/* --- 이름 변경 대화상자 --- */
+.rename-dialog-box {
+    position: relative; /* 리사이즈 손잡이(.dialog-resize-handle) 기준점 */
+    width: 380px;
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--outline);
+    border-radius: 6px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.rename-dialog-box .modal-header {
+    cursor: move;
+    user-select: none;
+}
+
+.rename-input {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 13px;
+}
+
+.rename-error {
+    color: var(--danger);
+    font-size: 12px;
+    margin-top: 6px;
+}
+
+.rename-hint {
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.5;
+    margin-top: 10px;
+}
+
+/* --- 삭제 확인 대화상자 --- */
+.delete-dialog-box {
+    position: relative; /* 리사이즈 손잡이(.dialog-resize-handle) 기준점 */
+    width: 400px;
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--outline);
+    border-radius: 6px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.delete-dialog-box .modal-header {
+    cursor: move;
+    user-select: none;
+}
+
+.delete-message {
+    font-size: 13.5px;
+    line-height: 1.5;
+}
+
+.delete-error {
+    color: var(--danger);
+    font-size: 12px;
+    margin-top: 6px;
+}
+
 .group-editor-body {
     display: flex;
     flex: 1;
     min-height: 320px;
     overflow: hidden;
+}
+
+/* --- 재색인 대화상자 --- */
+.reindex-dialog-box {
+    position: relative; /* 리사이즈 손잡이(.dialog-resize-handle) 기준점 */
+    width: 380px;
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--outline);
+    border-radius: 6px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.reindex-dialog-box .modal-header {
+    cursor: move;
+    user-select: none;
+}
+
+.reindex-message {
+    font-size: 13.5px;
+    line-height: 1.5;
+}
+
+.reindex-progress {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 20px 0;
+    color: var(--text-dim);
+}
+
+.reindex-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: reindex-spin 0.8s linear infinite;
+}
+
+@keyframes reindex-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.reindex-result {
+    font-size: 13.5px;
+    line-height: 1.5;
+}
+
+.reindex-result--error {
+    color: var(--danger);
 }
 
 .group-editor-tree-panel {

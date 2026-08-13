@@ -36,6 +36,15 @@ async function attachWpStatuses(nodes: TreeNode[]): Promise<void> {
     }
 }
 
+/** 트리의 모든 레벨(루트 + 각 GROUP의 children)을 이름 순으로 정렬한다 — 기본 정렬 기준. */
+function sortByName(nodes: TreeNode[]): TreeNode[] {
+    const sorted = [...nodes].sort((a, b) => a.name.localeCompare(b.name, "ko", { numeric: true }));
+    for (const node of sorted) {
+        if (node.children) node.children = sortByName(node.children);
+    }
+    return sorted;
+}
+
 export async function buildProjectTree(): Promise<TreeNode[]> {
     const [groups, wpPaths, dwpPaths, otherPaths] = await Promise.all([
         loadAllGroups(),
@@ -92,5 +101,5 @@ export async function buildProjectTree(): Promise<TreeNode[]> {
 
     await attachWpStatuses(rootNodes);
 
-    return rootNodes;
+    return sortByName(rootNodes);
 }
