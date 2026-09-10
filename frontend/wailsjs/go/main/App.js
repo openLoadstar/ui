@@ -38,6 +38,14 @@ export function GetRecentProjects() {
   return window['go']['main']['App']['GetRecentProjects']();
 }
 
+export function GitFileAtCommit(arg1, arg2) {
+  return window['go']['main']['App']['GitFileAtCommit'](arg1, arg2);
+}
+
+export function GitFileHistory(arg1) {
+  return window['go']['main']['App']['GitFileHistory'](arg1);
+}
+
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }
@@ -76,6 +84,10 @@ export function Reindex() {
 
 export function RenameFile(arg1, arg2) {
   return window['go']['main']['App']['RenameFile'](arg1, arg2);
+}
+
+export function SearchInFiles(arg1, arg2) {
+  return window['go']['main']['App']['SearchInFiles'](arg1, arg2);
 }
 
 export function SetOtherExtensions(arg1) {

@@ -22,4 +22,12 @@ export interface ViewMode {
      * 연속 입력(검색어 등)이 있는 필터는 구현체가 알아서 디바운스한다.
      */
     renderFilterPanel(container: HTMLElement, nodes: TreeNode[], onFilterChange: (filtered: TreeNode[]) => void): void;
+
+    /**
+     * (선택) 이 뷰에서 항목을 열 때 뷰어에 함께 넘길 검색어. 검색 뷰가
+     * "결과를 클릭하면 그 파일이 같은 키워드 하이라이트 상태로 열린다"를
+     * 구현하는 훅이다(`[WP][2.0][2026.09.10]검색.md` G2). 없거나 빈 문자열이면
+     * 평소대로 그냥 파일만 연다.
+     */
+    selectionQuery?(): string;
 }

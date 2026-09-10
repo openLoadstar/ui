@@ -1,11 +1,14 @@
 // 우측 탭 영역 관리 — 탭 열기/닫기/전환 + 보기·편집 모드 + 저장.
 
 import type { ElementFormat, TreeNode } from "./tree";
-import { readProjectFile, writeProjectFile, readExternalFile, deleteProjectFile } from "./fs";
+import { readProjectFile, writeProjectFile, readExternalFile, deleteProjectFile, gitFileHistory, gitFileAtCommit } from "./fs";
 import { renderMarkdown, renderPlainText, renderHtmlFile } from "./viewer";
 import { renderGroupInfo } from "./groupInfoView";
 import { validateContent } from "./validate";
 import { logInfo, logError } from "./log";
+import { FindBar, type FindTarget } from "./find";
+import { fillHistorySelect, WORKING_TREE } from "./historySelect";
+import type { main } from "../wailsjs/go/models";
 
 type Mode = "view" | "edit";
 
@@ -27,6 +30,16 @@ interface Tab {
      * 저장을 한 번이라도 하면 일반 탭과 동일하게 취급하도록 false로 내린다.
      */
     pendingCreation: boolean;
+    /**
+     * git 이력(`[WP][2.0][2026.09.10]파일 이력 뷰어.md`). 탭을 처음 그릴 때
+     * 지연 로드한다 — 조회가 탭 렌더를 막지 않도록.
+     */
+    history: main.GitHistory | null;
+    historyLoading: boolean;
+    /** null이면 작업 트리의 현재 내용, 아니면 그 커밋 시점을 보고 있다는 뜻. */
+    viewingHash: string | null;
+    /** viewingHash가 가리키는 시점의 원문. content(현재 내용)는 그대로 보존한다. */
+    historyContent: string;
 }
 
 function fileNameOf(path: string): string {
@@ -37,6 +50,8 @@ export class TabManager {
     private tabs: Tab[] = [];
     private activeId: string | null = null;
     private tabScrollEl: HTMLElement;
+    /** 찾기 바는 탭마다 새로 만들지 않고 하나를 재사용한다(find.ts 주석 참조). */
+    private findBar = new FindBar();
     private prevBtn: HTMLButtonElement;
     private nextBtn: HTMLButtonElement;
 
@@ -114,6 +129,10 @@ export class TabManager {
             dirty: false,
             loadFailed,
             pendingCreation,
+            history: null,
+            historyLoading: false,
+            viewingHash: null,
+            historyContent: "",
         };
         this.tabs.push(tab);
         this.activeId = tab.id;
@@ -153,6 +172,10 @@ export class TabManager {
             pendingCreation: false,
             dirty: false,
             loadFailed,
+            history: null,
+            historyLoading: false,
+            viewingHash: null,
+            historyContent: "",
         };
         this.tabs.push(tab);
         this.activeId = tab.id;
@@ -239,14 +262,14 @@ export class TabManager {
 
     private toggleMode(): void {
         const tab = this.activeTab();
-        if (!tab || tab.external || tab.format === "GROUP") return;
+        if (!tab || tab.external || tab.format === "GROUP" || tab.viewingHash !== null) return;
         tab.mode = tab.mode === "view" ? "edit" : "view";
         void this.renderActive();
     }
 
     private async save(): Promise<void> {
         const tab = this.activeTab();
-        if (!tab || tab.external || tab.format === "GROUP") return;
+        if (!tab || tab.external || tab.format === "GROUP" || tab.viewingHash !== null) return;
 
         const result = validateContent(tab.format as ElementFormat, tab.content);
         if (!result.valid) {
@@ -267,6 +290,7 @@ export class TabManager {
 
         tab.dirty = false;
         tab.mode = "view";
+        tab.history = null; // 저장으로 dirty 여부가 바뀐다 — 다음 렌더에서 다시 조회
         tab.pendingCreation = false; // 한 번이라도 저장했으면 더 이상 "실수로 만든 빈 파일"이 아니다
         await this.renderActive();
     }
@@ -295,29 +319,44 @@ export class TabManager {
 
         const tab = this.activeTab();
         if (!tab) {
+            this.findBar.close();
             this.contentEl.innerHTML = `<div class="viewer-empty">좌측 트리에서 항목을 선택하세요</div>`;
             return;
         }
 
         const isGroup = tab.format === "GROUP";
-        const editControls = isGroup
-            ? "" // 그룹 편집기가 멤버십 수정을 전담 — 이 탭은 정보 표시 전용
-            : tab.external
-              ? '<span class="viewer-external-badge">읽기 전용 (탐색됨)</span>'
-              : `<button class="tb-btn" data-role="toggle-mode"></button>
+        const viewingHistory = tab.viewingHash !== null;
+        // 이력은 프로젝트 안의 파일에만 붙인다 — 외부 탐색 파일(절대경로)은
+        // 어느 저장소에 속하는지 보장할 수 없다.
+        const historyControl = tab.external ? "" : `<select class="history-select" data-role="history"></select>`;
+        const editControls = viewingHistory
+            ? '<span class="viewer-external-badge">과거 버전 (읽기 전용)</span>'
+            : isGroup
+              ? "" // 그룹 편집기가 멤버십 수정을 전담 — 이 탭은 정보 표시 전용
+              : tab.external
+                ? '<span class="viewer-external-badge">읽기 전용 (탐색됨)</span>'
+                : `<button class="tb-btn" data-role="toggle-mode"></button>
                  <button class="tb-btn" data-role="save" ${tab.mode === "edit" ? "" : "disabled"}>저장</button>`;
 
         this.contentEl.innerHTML = `
             <div class="viewer-toolbar">
                 <span class="viewer-path"></span>
                 <span class="viewer-toolbar-spacer"></span>
+                ${historyControl}
                 ${editControls}
             </div>
             <div class="viewer-body"></div>
         `;
         this.contentEl.querySelector(".viewer-path")!.textContent = tab.path;
 
-        if (!tab.external && !isGroup) {
+        const historySelect = this.contentEl.querySelector<HTMLSelectElement>('[data-role="history"]');
+        if (historySelect) {
+            fillHistorySelect(historySelect, tab.history, tab.viewingHash);
+            historySelect.addEventListener("change", () => void this.selectVersion(tab, historySelect.value));
+            void this.ensureHistoryLoaded(tab);
+        }
+
+        if (!tab.external && !isGroup && !viewingHistory) {
             const toggleBtn = this.contentEl.querySelector<HTMLButtonElement>('[data-role="toggle-mode"]')!;
             toggleBtn.textContent = tab.mode === "view" ? "✎ 편집" : "👁 미리보기";
             toggleBtn.addEventListener("click", () => this.toggleMode());
@@ -328,14 +367,17 @@ export class TabManager {
         }
 
         const body = this.contentEl.querySelector<HTMLElement>(".viewer-body")!;
-        if (isGroup) {
+        // 과거 버전은 파일로 존재하지 않는 문자열이라 GROUP 정보 뷰(멤버 파일 존재
+        // 확인이 필요)에 태우지 않고 md로만 렌더한다.
+        const displayed = viewingHistory ? tab.historyContent : tab.content;
+        if (isGroup && !viewingHistory) {
             try {
                 await renderGroupInfo(body, tab.content, tab.path, (target) => void this.open(target));
             } catch (err) {
                 logError(`GROUP 정보 렌더링 실패: ${tab.path}`, err);
                 body.innerHTML = `<div class="viewer-empty">⚠️ GROUP 정보를 표시하는 중 오류가 발생했습니다. 콘솔/로그를 확인하세요.</div>`;
             }
-        } else if (tab.mode === "edit") {
+        } else if (tab.mode === "edit" && !viewingHistory) {
             body.innerHTML = `<textarea class="editor-textarea" spellcheck="false"></textarea>`;
             const textarea = body.querySelector<HTMLTextAreaElement>(".editor-textarea")!;
             textarea.value = tab.content;
@@ -357,16 +399,96 @@ export class TabManager {
             const viewerEl = body.querySelector<HTMLElement>(isHtml ? ".html-viewer" : ".md-viewer")!;
             try {
                 if (lowerPath.endsWith(".md")) {
-                    await renderMarkdown(viewerEl, tab.content);
+                    await renderMarkdown(viewerEl, displayed);
                 } else if (isHtml) {
-                    renderHtmlFile(viewerEl, tab.content);
+                    renderHtmlFile(viewerEl, displayed);
                 } else {
-                    renderPlainText(viewerEl, tab.content);
+                    renderPlainText(viewerEl, displayed);
                 }
             } catch (err) {
                 logError(`렌더링 실패: ${tab.path}`, err);
                 viewerEl.innerHTML = `<div class="viewer-empty">⚠️ 렌더링 중 오류가 발생했습니다. 콘솔/로그를 확인하세요.</div>`;
             }
         }
+
+        // 탭 내용이 통째로 다시 그려졌으므로, 열려 있던 찾기 바를 새 DOM에 다시 붙인다.
+        this.findBar.attach(this.contentEl, this.findTarget());
+    }
+
+    /** 현재 탭 화면에서 찾기 대상(보기 모드 본문 / 편집 모드 textarea)을 집어낸다. */
+    private findTarget(): FindTarget {
+        const body = this.contentEl.querySelector<HTMLElement>(".viewer-body") ?? this.contentEl;
+        return { body, textarea: body.querySelector<HTMLTextAreaElement>(".editor-textarea") };
+    }
+
+    /**
+     * Ctrl+F, 그리고 검색 뷰에서 파일을 열었을 때의 진입점.
+     * hitIndex는 "이 파일의 몇 번째 일치로 갈지"(0-based).
+     */
+    openFind(query?: string, hitIndex?: number): void {
+        if (!this.activeTab()) return;
+        this.findBar.open(this.contentEl, this.findTarget(), query, hitIndex);
+    }
+
+    /** F3 / Shift+F3 — 찾기 바가 열려 있을 때만 다음/이전 일치로 이동한다. */
+    findNext(direction: 1 | -1): void {
+        if (this.findBar.isOpen()) this.findBar.step(direction, true);
+    }
+
+    /** 열려 있는 탭이 있는지 — "편집 > 찾기" 메뉴 항목 활성/비활성 판단용. */
+    hasActiveTab(): boolean {
+        return this.activeTab() !== undefined;
+    }
+
+    /** 찾기 바가 열려 있는지 — Esc 처리(main.ts)에서 참조. */
+    isFindOpen(): boolean {
+        return this.findBar.isOpen();
+    }
+
+    closeFind(): void {
+        this.findBar.close();
+    }
+
+    /** 이력을 지연 로드하고, 그 사이 탭이 바뀌지 않았으면 콤보박스만 갱신한다. */
+    private async ensureHistoryLoaded(tab: Tab): Promise<void> {
+        if (tab.history || tab.historyLoading || tab.external) return;
+        tab.historyLoading = true;
+        try {
+            tab.history = await gitFileHistory(tab.path);
+        } catch (err) {
+            logError(`이력 조회 실패: ${tab.path}`, err);
+            const detail = err instanceof Error ? err.message : String(err);
+            tab.history = { available: false, reason: detail, dirty: false, commits: [] } as unknown as main.GitHistory;
+        } finally {
+            tab.historyLoading = false;
+        }
+        if (this.activeId !== tab.id) return; // 조회 중 사용자가 다른 탭으로 옮김 — 화면은 건드리지 않는다
+        const select = this.contentEl.querySelector<HTMLSelectElement>('[data-role="history"]');
+        if (select) fillHistorySelect(select, tab.history, tab.viewingHash);
+    }
+
+    /** 콤보박스에서 버전을 고른 순간. 빈 값이면 작업 트리의 현재 내용으로 돌아온다. */
+    private async selectVersion(tab: Tab, hash: string): Promise<void> {
+        if (hash === WORKING_TREE) {
+            tab.viewingHash = null;
+            tab.historyContent = "";
+            await this.renderActive();
+            return;
+        }
+        const commit = tab.history?.commits.find((c) => c.hash === hash);
+        if (!commit) return;
+        try {
+            // commit.path는 "그 커밋 시점의" 경로 — 리네임 이전 커밋도 이 값으로 읽힌다.
+            tab.historyContent = await gitFileAtCommit(commit.path, commit.hash);
+            logInfo(`과거 버전 표시: ${tab.path} @ ${commit.short}`);
+        } catch (err) {
+            logError(`과거 버전 조회 실패: ${tab.path} @ ${hash}`, err);
+            alert(`과거 버전을 읽지 못했습니다: ${err instanceof Error ? err.message : String(err)}`);
+            await this.renderActive(); // 콤보박스를 실제 상태(현재 보고 있는 버전)로 되돌린다
+            return;
+        }
+        tab.viewingHash = hash;
+        tab.mode = "view"; // 편집 중이었어도 과거 버전은 읽기 전용 — 편집 내용은 tab.content에 그대로 남는다
+        await this.renderActive();
     }
 }

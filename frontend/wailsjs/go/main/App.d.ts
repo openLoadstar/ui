@@ -20,6 +20,10 @@ export function GetRecentFiles():Promise<Array<main.RecentFile>>;
 
 export function GetRecentProjects():Promise<Array<main.RecentProject>>;
 
+export function GitFileAtCommit(arg1:string,arg2:string):Promise<string>;
+
+export function GitFileHistory(arg1:string):Promise<main.GitHistory>;
+
 export function Greet(arg1:string):Promise<string>;
 
 export function ListAllFilesWithModTime():Promise<Array<main.DatedFile>>;
@@ -39,6 +43,8 @@ export function ReadFile(arg1:string):Promise<string>;
 export function Reindex():Promise<main.ReindexStats>;
 
 export function RenameFile(arg1:string,arg2:string):Promise<void>;
+
+export function SearchInFiles(arg1:string,arg2:boolean):Promise<Array<main.SearchFileResult>>;
 
 export function SetOtherExtensions(arg1:Array<string>):Promise<void>;
 

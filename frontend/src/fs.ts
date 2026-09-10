@@ -23,6 +23,9 @@ import {
     ListOtherFileExtensions as goListOtherFileExtensions,
     Reindex as goReindex,
     ListAllFilesWithModTime as goListAllFilesWithModTime,
+    GitFileHistory as goGitFileHistory,
+    GitFileAtCommit as goGitFileAtCommit,
+    SearchInFiles as goSearchInFiles,
 } from "../wailsjs/go/main/App";
 import type { main } from "../wailsjs/go/models";
 // 개발 중 브라우저 미리보기 전용 — 실제 WP 파일을 그대로 읽어와 목업으로 쓴다(내용 중복 없음).
@@ -286,4 +289,51 @@ export async function renameProjectFile(oldPath: string, newPath: string): Promi
         if (idx !== -1) listing[idx] = newPath;
         else listing.push(newPath);
     }
+}
+
+/**
+ * 파일 이력 뷰어(`[WP][2.0][2026.09.10]파일 이력 뷰어.md`) — 이 파일의 git 커밋 이력.
+ * git 미설치·비-git 프로젝트·미추적 파일은 예외가 아니라 available=false로 온다.
+ */
+export async function gitFileHistory(path: string): Promise<main.GitHistory> {
+    if (isWailsRuntimeAvailable()) {
+        return goGitFileHistory(path);
+    }
+    // main.GitHistory는 convertValues를 가진 생성 클래스라 리터럴을 바로 캐스팅할 수 없다 —
+    // 읽기 전용 목업이므로 unknown을 경유한다.
+    return { available: false, reason: "브라우저 미리보기에서는 git 이력을 조회할 수 없습니다", dirty: false, commits: [] } as unknown as main.GitHistory;
+}
+
+/** 특정 커밋 시점의 파일 원문. repoPath는 GitCommit.path(그 커밋 시점 경로)를 그대로 넘긴다. */
+export async function gitFileAtCommit(repoPath: string, hash: string): Promise<string> {
+    if (isWailsRuntimeAvailable()) {
+        return goGitFileAtCommit(repoPath, hash);
+    }
+    return "";
+}
+
+/** 전체 파일 검색(`[WP][2.0][2026.09.10]검색.md` G2) — WP/DWP/GROUP/OTHER 전 요소 대상. */
+export async function searchInFiles(query: string, caseSensitive: boolean): Promise<main.SearchFileResult[]> {
+    if (isWailsRuntimeAvailable()) {
+        return goSearchInFiles(query, caseSensitive);
+    }
+    // 브라우저 미리보기 — 목업 저장소 안에서만 같은 규칙으로 흉내 낸다.
+    const needle = caseSensitive ? query : query.toLowerCase();
+    const results: main.SearchFileResult[] = [];
+    for (const [path, content] of Object.entries(mockStore)) {
+        if (path === "__default__") continue;
+        const lines = content.split(/\r?\n/);
+        const hits: { line: number; text: string; index: number; lineCount: number }[] = [];
+        let total = 0;
+        lines.forEach((line, i) => {
+            const haystack = caseSensitive ? line : line.toLowerCase();
+            const n = haystack.split(needle).length - 1;
+            if (n > 0) {
+                hits.push({ line: i + 1, text: line.trim().slice(0, 200), index: total, lineCount: n });
+                total += n;
+            }
+        });
+        if (total > 0) results.push({ path, count: total, nameMatch: false, hits, truncated: false } as unknown as main.SearchFileResult);
+    }
+    return results.sort((a, b) => b.count - a.count);
 }

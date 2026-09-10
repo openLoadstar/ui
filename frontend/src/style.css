@@ -493,6 +493,7 @@ body.resizing-col {
     display: flex;
     flex-direction: column;
     min-height: 0;
+    position: relative; /* 찾기 바(.find-bar)가 콘텐츠 위에 겹쳐 뜨는 기준 */
 }
 
 .viewer-empty {
@@ -702,14 +703,46 @@ body.resizing-col {
 }
 
 .menu-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     padding: 6px 14px;
     cursor: pointer;
     user-select: none;
     white-space: nowrap;
 }
 
+/* 단축키 안내 — 항목 오른쪽 끝에 흐리게 */
+.menu-dropdown-shortcut {
+    margin-left: auto;
+    padding-left: 18px;
+    color: var(--text-dim);
+    font-size: 11px;
+}
+
+/* 보기 메뉴의 현재 뷰 체크 표시 — 체크가 없는 항목도 라벨이 밀리지 않게 자리는 고정 */
+.menu-dropdown-check {
+    width: 10px;
+    color: var(--accent);
+}
+
+.menu-dropdown-sep {
+    height: 1px;
+    margin: 4px 0;
+    background: var(--border);
+}
+
 .menu-dropdown-item:hover {
     background: rgba(255, 255, 255, 0.08);
+}
+
+.menu-dropdown-item--disabled {
+    color: var(--outline);
+    cursor: default;
+}
+
+.menu-dropdown-item--disabled:hover {
+    background: none;
 }
 
 /* --- 트리 우클릭 메뉴 --- */
@@ -1253,4 +1286,157 @@ body.resizing-col {
 .add-picker-actions {
     display: flex;
     gap: 8px;
+}
+
+/* --- 찾기 바 / 하이라이트 (`[WP][2.0][2026.09.10]검색.md`) --- */
+.find-bar {
+    position: absolute;
+    top: 40px; /* 뷰어 툴바(경로·버전 콤보·편집/저장) 아래 — 툴바를 가리지 않게 */
+    right: 18px; /* 본문 스크롤바를 가리지 않도록 살짝 안쪽 */
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 6px;
+    background: var(--panel);
+    border: 1px solid var(--outline);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.find-input {
+    width: 180px;
+    padding: 3px 6px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.find-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.find-count {
+    min-width: 42px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 11px;
+}
+
+.find-count--empty {
+    color: var(--danger);
+}
+
+.find-btn {
+    padding: 2px 7px;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.find-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.find-btn--toggle {
+    border-color: var(--border);
+    font-size: 11px;
+}
+
+.find-btn--active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+/* 요구사항의 "반전된 색상" — 배경/글자색을 본문과 뒤바꾼다. */
+mark.find-hit {
+    background: var(--text);
+    color: var(--bg);
+    border-radius: 2px;
+}
+
+mark.find-hit--current {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* 편집 모드에는 <mark>를 넣을 수 없어 현재 일치를 selection으로만 표시한다. */
+.editor-textarea::selection {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* --- 버전(git 이력) 콤보박스 (`[WP][2.0][2026.09.10]파일 이력 뷰어.md`) --- */
+.history-select {
+    max-width: 300px;
+    padding: 3px 6px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.history-select:disabled {
+    color: var(--text-dim);
+    cursor: default;
+}
+
+/* --- 검색 뷰 필터 패널 / 결과 트리 --- */
+.search-input {
+    width: 220px;
+    padding: 3px 8px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.search-summary {
+    color: var(--text-dim);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.tree-hits-badge {
+    margin-left: auto;
+    padding: 0 6px;
+    background: var(--border);
+    border-radius: 8px;
+    color: var(--text-dim);
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.tree-row--hit {
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.tree-hit-line {
+    min-width: 32px;
+    text-align: right;
+    color: var(--outline);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.tree-hit-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }

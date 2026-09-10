@@ -14,6 +14,16 @@ export interface TreeNode {
     status?: StatusBucket;
     /** ISO 8601 mtime. 날짜별 보기(dateTreeView.ts)에서만 채워진다 — 정렬·필터·라벨 표시 겸용. */
     mtime?: string;
+    /** 검색 뷰(searchView.ts) 전용 — 이 파일의 일치 개수 배지. */
+    hits?: number;
+    /**
+     * 검색 뷰 전용 — 이 노드가 "파일"이 아니라 "그 파일 안의 한 히트"임을 나타낸다.
+     * 값은 파일 안에서 몇 번째 일치인지(0-based)로, 파일을 열 때 그 순번의
+     * 하이라이트로 바로 이동하는 데 쓴다.
+     */
+    hitIndex?: number;
+    /** 검색 뷰 전용 — 히트가 있는 줄 번호(1-based). */
+    hitLine?: number;
 }
 
 // 이모지(📄 등)는 폰트에 색이 고정된 그림이라 CSS로 못 바꾼다 — WP/DWP는
@@ -96,22 +106,28 @@ function renderNode(node: TreeNode, callbacks: TreeCallbacks): HTMLElement {
 
     const row = document.createElement("div");
     row.className = "tree-row";
-    const isGroup = node.format === "GROUP";
+    const isHit = node.hitIndex !== undefined; // 검색 결과의 라인 히트 행
+    if (isHit) row.classList.add("tree-row--hit");
     const hasChildren = !!node.children && node.children.length > 0;
-    const collapsed = isGroup && hasChildren && (callbacks.isCollapsed?.(node) ?? false);
-    // 접기/펼치기 화살표는 GROUP+자식 있을 때만 보이지만, 자리는 모든 행에 동일하게
+    const collapsed = hasChildren && (callbacks.isCollapsed?.(node) ?? false);
+    // 접기/펼치기 화살표는 자식이 있을 때만 보이지만, 자리는 모든 행에 동일하게
     // 둬서 들여쓰기가 포맷에 따라 어긋나지 않게 한다.
-    const toggleArrow =
-        isGroup && hasChildren
-            ? `<span class="tree-toggle">${collapsed ? "▸" : "▾"}</span>`
-            : `<span class="tree-toggle tree-toggle--empty"></span>`;
+    const toggleArrow = hasChildren
+        ? `<span class="tree-toggle">${collapsed ? "▸" : "▾"}</span>`
+        : `<span class="tree-toggle tree-toggle--empty"></span>`;
     const statusDot = node.status
         ? `<span class="tree-status-dot" style="background:${STATUS_COLORS[node.status]}" title="${STATUS_LABELS[node.status]}"></span>`
         : "";
     const dateLabel = node.mtime ? `<span class="tree-date-label">${formatDateLabel(node.mtime)}</span>` : "";
-    row.innerHTML = `${toggleArrow}<span class="tree-icon">${formatIcon[node.format]}</span>${statusDot}<span class="tree-label">${escapeHtml(node.name)}</span>${dateLabel}`;
+    const hitsBadge = node.hits !== undefined ? `<span class="tree-hits-badge">${node.hits}</span>` : "";
+    if (isHit) {
+        // 히트 행은 아이콘/상태점 없이 "줄번호 + 그 줄 원문"만 — 이클립스 검색 결과와 같은 모양.
+        row.innerHTML = `${toggleArrow}<span class="tree-hit-line">${node.hitLine}</span><span class="tree-hit-text">${escapeHtml(node.name)}</span>`;
+    } else {
+        row.innerHTML = `${toggleArrow}<span class="tree-icon">${formatIcon[node.format]}</span>${statusDot}<span class="tree-label">${escapeHtml(node.name)}</span>${dateLabel}${hitsBadge}`;
+    }
 
-    if (isGroup && callbacks.onToggleCollapse) {
+    if (hasChildren && callbacks.onToggleCollapse) {
         let pendingClick: ReturnType<typeof setTimeout> | null = null;
         row.addEventListener("click", () => {
             if (pendingClick) return; // 이미 단일 클릭을 기다리는 중(연타 방지)
@@ -133,7 +149,7 @@ function renderNode(node: TreeNode, callbacks: TreeCallbacks): HTMLElement {
 
     // 우클릭 메뉴(이름변경/삭제)는 WP/DWP/OTHER에 둔다 — GROUP만 예외로 그룹 편집기가 전담.
     // OTHER는 resolveOtherFilename(main.ts)이 접두어 없는 자유 파일명을 그대로 다룬다.
-    if (callbacks.onContextMenu && node.format !== "GROUP") {
+    if (callbacks.onContextMenu && node.format !== "GROUP" && !isHit) {
         row.addEventListener("contextmenu", (e) => {
             e.preventDefault();
             callbacks.onContextMenu!(node, e.clientX, e.clientY);

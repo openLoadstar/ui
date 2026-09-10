@@ -1,8 +1,9 @@
 import "./style.css";
-import { renderTree, renameFilenameKeepingPrefix, resolveOtherFilename, type TreeNode } from "./tree";
+import { renderTree, renameFilenameKeepingPrefix, resolveOtherFilename, parseElementFilename, type TreeNode } from "./tree";
 import type { ViewMode } from "./viewMode";
 import { groupTreeView } from "./groupTreeView";
 import { dateTreeView } from "./dateTreeView";
+import { searchView, focusSearchInput } from "./searchView";
 import { TabManager } from "./tabs";
 import { initSplitter } from "./splitter";
 import { logInfo, logError } from "./log";
@@ -17,13 +18,18 @@ import { createElement, readProjectFile, writeProjectFile, renameProjectFile, re
 import { loadAllGroups } from "./groupIndex";
 import { parseGroupItems, setGroupItems } from "./groupFile";
 
-// 새 뷰(검색 등)는 여기 추가하면 된다 — `[WP][2.0][2026.08.13]뷰 전환 아키텍처.md` 참조.
-const VIEWS: ViewMode[] = [groupTreeView, dateTreeView];
+// 새 뷰는 여기 추가하면 된다 — `[WP][2.0][2026.08.13]뷰 전환 아키텍처.md` 참조.
+const VIEWS: ViewMode[] = [groupTreeView, dateTreeView, searchView];
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
+// 프로젝트를 다시 열면 startExplorer가 다시 돌아 화면을 통째로 새로 만든다 —
+// 전역 단축키 핸들러가 중복 등록되지 않도록 이전 것을 떼어낸다.
+let globalKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+
 function startExplorer(projectRoot: string): void {
     logInfo(`프로젝트 열림: ${projectRoot}`);
+    if (globalKeyHandler) document.removeEventListener("keydown", globalKeyHandler);
 
     app.innerHTML = `
       <div id="layout">
@@ -38,11 +44,17 @@ function startExplorer(projectRoot: string): void {
           <div class="menu-item-wrap">
             <span class="menu-item" data-menu="edit">편집</span>
             <div class="menu-dropdown" id="edit-menu-dropdown" hidden>
+              <div class="menu-dropdown-item" data-role="find">찾기<span class="menu-dropdown-shortcut">Ctrl+F</span></div>
+              <div class="menu-dropdown-item" data-role="search-all">전체 검색<span class="menu-dropdown-shortcut">Ctrl+Shift+F</span></div>
+              <div class="menu-dropdown-sep"></div>
               <div class="menu-dropdown-item" data-role="group-editor">그룹편집</div>
               <div class="menu-dropdown-item" data-role="other-filter-settings">OTHER 확장자 설정</div>
             </div>
           </div>
-          <span class="menu-item" data-action="view">보기</span>
+          <div class="menu-item-wrap">
+            <span class="menu-item" data-menu="view">보기</span>
+            <div class="menu-dropdown" id="view-menu-dropdown" hidden></div>
+          </div>
         </div>
         <div id="toolbar">
           <button class="tb-btn" data-action="new-wp">+ WP</button>
@@ -98,7 +110,19 @@ function startExplorer(projectRoot: string): void {
 
     function onTreeNodeSelect(node: TreeNode): void {
         logInfo(`트리 선택: ${node.name} (${node.path})`);
-        void tabs.open(node);
+        void (async () => {
+            // 검색 결과의 라인 히트 노드는 name이 그 줄 원문이라 탭 제목으로 쓸 수 없다 —
+            // 파일명에서 다시 표시 이름을 뽑는다.
+            const target: TreeNode =
+                node.hitIndex === undefined
+                    ? node
+                    : { ...node, name: parseElementFilename(node.path.split("/").pop() ?? node.path).name };
+            await tabs.open(target);
+            // 검색 뷰에서 연 파일은 같은 키워드가 하이라이트된 상태로 진입한다
+            // (`[WP][2.0][2026.09.10]검색.md` G2).
+            const query = currentView.selectionQuery?.();
+            if (query) tabs.openFind(query, node.hitIndex ?? 0);
+        })();
     }
 
     function toggleGroupCollapse(node: TreeNode): void {
@@ -121,15 +145,37 @@ function startExplorer(projectRoot: string): void {
         renderFilteredTree();
     }
 
-    // 지금은 뷰가 하나뿐이라 사실상 아무 효과 없지만, 뷰가 늘어났을 때 바로 쓰도록 구조는 갖춰둔다.
     viewSwitcherEl.innerHTML = VIEWS.map((v) => `<option value="${v.id}">${v.label}</option>`).join("");
-    viewSwitcherEl.addEventListener("change", () => {
-        const view = VIEWS.find((v) => v.id === viewSwitcherEl.value);
-        if (view) {
-            currentView = view;
-            void renderCurrentTree();
+    viewSwitcherEl.addEventListener("change", () => switchToView(viewSwitcherEl.value));
+
+    /**
+     * 뷰 전환의 단일 진입점 — 툴바 콤보박스, 보기 메뉴, Ctrl+Shift+F가 모두 여기를 탄다.
+     * 이미 그 뷰면 아무것도 하지 않는다(필터 패널이 다시 마운트되며 입력 포커스가 튀는 것 방지).
+     */
+    function switchToView(id: string): void {
+        const view = VIEWS.find((v) => v.id === id);
+        if (!view || view === currentView) return;
+        currentView = view;
+        viewSwitcherEl.value = id;
+        renderViewMenu();
+        void renderCurrentTree();
+    }
+
+    /** 보기 메뉴 = 뷰 목록. 현재 뷰에 체크 표시를 단다. */
+    function renderViewMenu(): void {
+        viewDropdown.innerHTML = VIEWS.map(
+            (v) =>
+                `<div class="menu-dropdown-item" data-view-id="${v.id}"><span class="menu-dropdown-check">${v.id === currentView.id ? "✓" : ""}</span>${v.label}${v.id === searchView.id ? '<span class="menu-dropdown-shortcut">Ctrl+Shift+F</span>' : ""}</div>`,
+        ).join("");
+        for (const item of Array.from(viewDropdown.querySelectorAll<HTMLElement>("[data-view-id]"))) {
+            item.addEventListener("click", () => {
+                closeAllDropdowns();
+                const id = item.dataset.viewId!;
+                switchToView(id);
+                if (id === searchView.id) setTimeout(() => focusSearchInput(), 0);
+            });
         }
-    });
+    }
 
     async function renderCurrentTree(): Promise<void> {
         let nodes: TreeNode[] = [];
@@ -287,7 +333,8 @@ function startExplorer(projectRoot: string): void {
 
     const fileDropdown = document.querySelector<HTMLElement>("#file-menu-dropdown")!;
     const editDropdown = document.querySelector<HTMLElement>("#edit-menu-dropdown")!;
-    const allDropdowns = [fileDropdown, editDropdown];
+    const viewDropdown = document.querySelector<HTMLElement>("#view-menu-dropdown")!;
+    const allDropdowns = [fileDropdown, editDropdown, viewDropdown];
 
     function closeAllDropdowns(): void {
         for (const d of allDropdowns) d.hidden = true;
@@ -305,9 +352,34 @@ function startExplorer(projectRoot: string): void {
         const willOpen = editDropdown.hidden;
         closeAllDropdowns();
         editDropdown.hidden = !willOpen;
+        // 열린 탭이 없으면 "찾기"는 대상이 없다 — 눌러도 아무 일이 없는 대신 흐리게 표시한다.
+        editDropdown
+            .querySelector('[data-role="find"]')!
+            .classList.toggle("menu-dropdown-item--disabled", !tabs.hasActiveTab());
+    });
+
+    document.querySelector<HTMLElement>('[data-menu="view"]')!.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const willOpen = viewDropdown.hidden;
+        closeAllDropdowns();
+        viewDropdown.hidden = !willOpen;
     });
 
     document.addEventListener("click", closeAllDropdowns);
+
+    editDropdown.querySelector<HTMLElement>('[data-role="find"]')!.addEventListener("click", () => {
+        if (!tabs.hasActiveTab()) return;
+        closeAllDropdowns();
+        tabs.openFind();
+    });
+
+    editDropdown.querySelector<HTMLElement>('[data-role="search-all"]')!.addEventListener("click", () => {
+        closeAllDropdowns();
+        switchToView(searchView.id);
+        setTimeout(() => focusSearchInput(), 0);
+    });
+
+    renderViewMenu();
 
     fileDropdown.querySelector<HTMLElement>('[data-role="browse-file"]')!.addEventListener("click", () => {
         closeAllDropdowns();
@@ -332,6 +404,32 @@ function startExplorer(projectRoot: string): void {
     document.querySelector<HTMLElement>('[data-role="new-group"]')!.addEventListener("click", () => {
         openGroupEditor(() => void refreshTreeAndTimestamp());
     });
+
+    // --- 전역 단축키 (`[WP][2.0][2026.09.10]검색.md`) ---
+    globalKeyHandler = (e: KeyboardEvent) => {
+        const ctrl = e.ctrlKey || e.metaKey;
+        if (ctrl && e.shiftKey && (e.key === "F" || e.key === "f")) {
+            e.preventDefault();
+            switchToView(searchView.id);
+            // 뷰 전환(비동기 buildNodes)이 끝나고 필터 패널이 마운트된 뒤에 포커스를 준다.
+            setTimeout(() => focusSearchInput(), 0);
+            return;
+        }
+        if (ctrl && (e.key === "F" || e.key === "f")) {
+            e.preventDefault();
+            tabs.openFind();
+            return;
+        }
+        if (e.key === "F3") {
+            e.preventDefault();
+            tabs.findNext(e.shiftKey ? -1 : 1);
+            return;
+        }
+        if (e.key === "Escape" && tabs.isFindOpen()) {
+            tabs.closeFind();
+        }
+    };
+    document.addEventListener("keydown", globalKeyHandler);
 
     logInfo("앱 초기화 완료");
 }

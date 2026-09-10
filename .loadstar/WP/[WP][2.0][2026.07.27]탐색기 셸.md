@@ -8,7 +8,9 @@
 
 ### CONNECTIONS
 - PARENT: [WP][2.0][2026.07.27]LOADSTAR 2.0 Standalone Viewer.md
-- CHILDREN: []
+- CHILDREN:
+  - [WP][2.0][2026.09.10]파일 이력 뷰어.md
+  - [WP][2.0][2026.09.10]검색.md
 - REFERENCE: [WP][2.0][2026.07.27]md Mermaid 뷰어.md
 
 ### ATTACHMENTS
@@ -20,7 +22,7 @@
 - [ ] Wails CLI 설치 (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`) 및 로컬 빌드 환경 확인(Go, 플랫폼별 webview 런타임)
 - [ ] `wails init`으로 프로젝트 초기화, Go 모듈/webview 기본 셸 구성
 - [x] 메뉴바 — 파일 > 탐색(외부 .md 파일 열기), 파일 > 프로젝트 열기
-- [ ] 메뉴바 — 편집/보기 메뉴 (현재 플레이스홀더)
+- [x] 2026-09-10 메뉴바 — `보기` 메뉴를 뷰 목록(현재 뷰 ✓ 표시, `searchView`엔 단축키 안내)으로 구현하고 툴바 콤보박스·`Ctrl+Shift+F`와 함께 `switchToView()` 한 경로로 통일. `편집` 메뉴에 `찾기(Ctrl+F)`/`전체 검색(Ctrl+Shift+F)` 추가 — 열린 탭이 없으면 `찾기`는 비활성 표시(`main.ts`, `TabManager.hasActiveTab`)
 - [x] 2026-08-04 툴바 — 새 WP/DWP 생성(이름만 입력 → 부록 스캐폴딩으로 즉시 파일 생성 → 편집 모드로 탭 오픈, GROUP 생성은 그룹 편집기의 "+ GROUP"이 이미 담당). `App.CreateElement`(`app.go`)가 `loadstar create` CLI 서브커맨드(`cli.go: createElement`)와 스캐폴딩/동명충돌 로직을 공유. reindex 버튼은 구조 추출기 WP 대기 중이라 범위 밖
 - [x] 2026-08-04 방금 생성한 WP/DWP 탭을 편집 없이 닫으면(×) 저장 확인 대신 "삭제하고 닫을까요?" 확인 — 실수로 만든 빈 스캐폴딩 파일이 프로젝트에 계속 남는 것을 방지. 저장을 한 번이라도 하면 일반 탭과 동일하게 취급(`Tab.pendingCreation`, `tabs.ts`)
 - [x] 2026-08-04 좌측 트리의 WP/DWP 항목 우클릭 메뉴 — 이름변경/삭제(GROUP/OTHER는 범위 밖, GROUP은 그룹 편집기가 전담). `App.RenameFile`(`app.go`, `os.Rename` 기반) 추가. 소속 GROUP들의 ITEMS는 자동 갱신하지만, 다른 WP/DWP의 CONNECTIONS는 건드리지 않음(`02.ELEMENT_FORMAT.md` §4 Tolerable Consistency — 참조 무결성은 검증 도구 몫, 대화상자에 위험만 안내). 대상이 탭으로 열려 있었으면 확인 없이 자동으로 닫음(옛 경로로 저장해서 파일이 되살아나는 사고 방지). WP/DWP 아이콘은 이모지 대신 같은 모양의 선(stroke) SVG로 바꾸고 색만 다르게 줌(WP=기본 텍스트색, DWP=파란 accent색) — 이모지는 폰트에 색이 고정돼 있어 CSS로 색을 바꿀 수 없어서(`tree.ts: fileIconSvg`)
