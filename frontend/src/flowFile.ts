@@ -554,3 +554,117 @@ export function renameNodeId(raw: string, oldId: string, newId: string): string 
     }
     return out;
 }
+
+// ---- 간선 단위 편집 -------------------------------------------------------
+//
+// 간선은 줄 번호(`FlowEdge.line`)로 짚는다. 편집할 때마다 문서를 다시 파싱하므로
+// 한 번의 갱신 주기 안에서는 줄 번호가 그대로 유효하다.
+
+// `-- 예 -->`(텍스트 형)와 `-->|예|`(파이프 형) 두 가지 라벨 표기를 다룬다.
+const ARROW_TEXT_LABEL = /^(-{2,3})\s(.*)\s(-{2,3}>)$/;
+const ARROW_PIPE_LABEL = /^(.*?)\|([^|]*)\|$/;
+
+/** 화살표에서 라벨을 떼어낸 형태와, 원래 어떤 표기였는지. */
+function arrowParts(arrow: string): { base: string; style: "text" | "pipe" | "none"; label: string } {
+    const text = ARROW_TEXT_LABEL.exec(arrow);
+    if (text) return { base: text[3], style: "text", label: text[2].trim() };
+    const pipe = ARROW_PIPE_LABEL.exec(arrow);
+    if (pipe) return { base: pipe[1].trim(), style: "pipe", label: pipe[2].trim() };
+    return { base: arrow, style: "none", label: "" };
+}
+
+/** 그 간선에 붙은 조건 라벨. */
+export function edgeLabelOf(raw: string, line: number): string {
+    const lines = raw.split(/\r?\n/);
+    const edge = parseEdgeLine(lines[line] ?? "");
+    return edge ? arrowParts(edge.arrow).label : "";
+}
+
+/**
+ * 라벨을 붙인 화살표 문자열. 원래 표기를 유지하되, 라벨이 없던 화살표는
+ * `-- 예 -->` 형으로 만든다 — 점선·굵은선은 그 표기가 안 먹어서 `|예|` 형을 쓴다.
+ */
+function arrowWithLabel(arrow: string, label: string): string {
+    const { base, style } = arrowParts(arrow);
+    const text = label.trim();
+    if (text === "") return base;
+    const plain = /^-{2,3}>$/.test(base);
+    if (style === "pipe" || !plain) return base + "|" + text + "|";
+    return "-- " + text + " " + base;
+}
+
+/** 간선의 조건 라벨을 바꾼다(빈 문자열이면 라벨 제거). */
+export function setEdgeLabel(raw: string, line: number, label: string): string {
+    const newline = raw.includes("\r\n") ? "\r\n" : "\n";
+    const lines = raw.split(/\r?\n/);
+    const edge = parseEdgeLine(lines[line] ?? "");
+    if (!edge) return raw;
+    lines[line] = edge.indent + edge.left + " " + arrowWithLabel(edge.arrow, label) + " " + edge.right;
+    return lines.join(newline);
+}
+
+/**
+ * 그 간선 하나에만 노드를 끼워 넣는다 — `ok -- 예 --> edge`에 넣으면
+ * `ok -- 예 --> new`, `new --> edge`가 된다. **조건 라벨은 분기 쪽에 남는다**:
+ * 갈래를 고른 뒤에 한 단계를 더 거치는 것이지, 조건이 뒤로 밀리는 게 아니다.
+ */
+export function insertOnEdge(
+    raw: string,
+    line: number,
+    opts: { id: string; shape: FlowShape; label: string },
+): string {
+    const ctx = openEdit(raw);
+    if (!ctx) return raw;
+    const { lines, range, newline } = ctx;
+    if (line < range.start || line >= range.end) return raw;
+    const edge = parseEdgeLine(lines[line]);
+    if (!edge) return raw;
+
+    const defs = collectDefinitions(lines, range);
+    const expr = nodeExpr(opts.id, opts.shape, opts.label);
+    lines[line] = edge.indent + edge.left + " " + edge.arrow + " " + opts.id;
+    lines.splice(line + 1, 0, edge.indent + expr + " --> " + edge.right);
+    restoreDefinitions(lines, defs);
+    return lines.join(newline);
+}
+
+/** 간선 한 줄을 지운다. 양 끝 노드는 다른 줄에 남아 있으면 그대로 유지된다. */
+export function deleteEdge(raw: string, line: number): string {
+    const ctx = openEdit(raw);
+    if (!ctx) return raw;
+    const { lines, range, newline } = ctx;
+    if (line < range.start || line >= range.end || !parseEdgeLine(lines[line])) return raw;
+
+    const defs = collectDefinitions(lines, range);
+    lines.splice(line, 1);
+    restoreDefinitions(lines, defs);
+    return lines.join(newline);
+}
+
+/**
+ * 노드에서 나가는 갈래를 하나 더 만든다. 대상은 기존 노드이거나 새로 만드는 노드다.
+ * 새 줄은 출발 노드가 마지막으로 등장한 줄 뒤에 넣는다 — 관련 줄끼리 모여 읽기 좋게.
+ */
+export function addEdge(
+    raw: string,
+    fromId: string,
+    target: { existingId: string } | { id: string; shape: FlowShape; label: string },
+    edgeLabel: string,
+): string {
+    const ctx = openEdit(raw);
+    if (!ctx) return raw;
+    const { lines, range, newline } = ctx;
+
+    const rightExpr =
+        "existingId" in target ? target.existingId : nodeExpr(target.id, target.shape, target.label);
+    const arrow = arrowWithLabel("-->", edgeLabel);
+    const indent = indentOf(lines, range);
+
+    let at = range.end;
+    for (let i = range.start; i < range.end; i++) {
+        const edge = parseEdgeLine(lines[i]);
+        if (edge && (idOf(edge.left) === fromId || idOf(edge.right) === fromId)) at = i + 1;
+    }
+    lines.splice(at, 0, indent + fromId + " " + arrow + " " + rightExpr);
+    return lines.join(newline);
+}

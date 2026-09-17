@@ -18,6 +18,11 @@ import {
     setNodeLabel,
     renameNodeId,
     nextNodeId,
+    setEdgeLabel,
+    insertOnEdge,
+    deleteEdge,
+    addEdge,
+    edgeLabelOf,
 } from "./flowFile";
 import { markFlowNodes, flowNodeIdFromEvent, renderFlowPanel } from "./flowView";
 
@@ -508,9 +513,12 @@ export class TabManager {
             markFlowNodes(canvas, doc, tab.selectedFlowNodeId);
             const focusLabel = focusLabelOnce;
             focusLabelOnce = false;
+            // 간선 라벨은 노드 모델에 없다 — 화면에 뿌릴 값만 원문에서 읽어 넘긴다.
+            const edgeLabels = new Map(doc.edges.map((e) => [e.line, edgeLabelOf(tab.content, e.line)]));
             renderFlowPanel(panel, {
                 doc,
                 focusLabel,
+                edgeLabels,
                 selected: doc.nodes.find((n) => n.id === tab.selectedFlowNodeId) ?? null,
                 onOpenRef: (filename) => void this.openByFilename(filename),
                 onLink: (id, filename) => {
@@ -539,6 +547,36 @@ export class TabManager {
                     this.applyFlowEdit(tab, addNode(tab.content, { anchorId, position, id, shape, label }));
                     tab.selectedFlowNodeId = id; // 방금 만든 노드를 이어서 다루게 된다
                     focusLabelOnce = true; // 임시 라벨이 들어갔을 수 있으니 바로 고쳐 쓰게
+                    void refresh(true);
+                },
+                onEdgeLabel: (line, label) => {
+                    this.applyFlowEdit(tab, setEdgeLabel(tab.content, line, label));
+                    void refresh(true);
+                },
+                onEdgeInsert: (line) => {
+                    const id = nextNodeId(doc, "step");
+                    this.applyFlowEdit(tab, insertOnEdge(tab.content, line, { id, shape: "step", label: "" }));
+                    tab.selectedFlowNodeId = id;
+                    focusLabelOnce = true;
+                    void refresh(true);
+                },
+                onEdgeDelete: (line) => {
+                    const edge = doc.edges.find((e) => e.line === line);
+                    const nameOf = (id: string) => doc.nodes.find((n) => n.id === id)?.label || id;
+                    const what = edge ? `${nameOf(edge.from)} → ${nameOf(edge.to)}` : "이 화살표";
+                    if (!confirm(`"${what}" 화살표를 끊을까요? 이 연결로만 이어져 있던 노드는 그림에서 떨어져 나옵니다.`)) return;
+                    this.applyFlowEdit(tab, deleteEdge(tab.content, line));
+                    void refresh(true);
+                },
+                onAddEdge: (fromId, targetId, label) => {
+                    if (targetId) {
+                        this.applyFlowEdit(tab, addEdge(tab.content, fromId, { existingId: targetId }, label));
+                    } else {
+                        const id = nextNodeId(doc, "step");
+                        this.applyFlowEdit(tab, addEdge(tab.content, fromId, { id, shape: "step", label: "" }, label));
+                        tab.selectedFlowNodeId = id;
+                        focusLabelOnce = true;
+                    }
                     void refresh(true);
                 },
                 onDelete: (id) => {

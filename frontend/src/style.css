@@ -1479,12 +1479,8 @@ mark.find-hit--current {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    min-height: 0;
-}
-
-.flow-panel-section--grow {
-    flex: 1;
-    min-height: 120px;
+    /* 패널은 세로로 스크롤되는 단순 목록이다 — 섹션이 줄어들면 내용이 서로 겹친다. */
+    flex-shrink: 0;
 }
 
 .flow-panel-label {
@@ -1568,7 +1564,7 @@ mark.find-hit--current {
 }
 
 .flow-panel-candidates {
-    flex: 1;
+    max-height: 180px;
     overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: 4px;
@@ -1654,6 +1650,43 @@ mark.find-hit--current {
     color: var(--danger);
     font-size: 11px;
     line-height: 1.5;
+}
+
+.flow-edge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.flow-edge-label {
+    width: 58px;
+    flex-shrink: 0;
+}
+
+.flow-edge-target {
+    flex: 1;
+    min-width: 0;
+}
+
+.flow-edge-peer {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+.flow-edge-btn {
+    padding: 1px 6px;
+    flex-shrink: 0;
+}
+
+.flow-edge--new {
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border);
 }
 
 .flow-panel-orphans {
