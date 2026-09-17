@@ -668,3 +668,67 @@ export function addEdge(
     lines.splice(at, 0, indent + fromId + " " + arrow + " " + rightExpr);
     return lines.join(newline);
 }
+
+/**
+ * 노드를 지금 자리에서 떼어내 다른 노드 **뒤**로 옮긴다.
+ *
+ * 두 동작의 합이다: 원래 자리에서는 앞뒤를 이어 붙이고(노드 삭제와 같은 통과 연결),
+ * 새 자리에서는 대상의 나가는 간선을 이 노드 뒤로 밀어낸다(삽입 추가와 같은 재배선).
+ * 조건 라벨은 원래 자리의 것이 사라진다 — 갈래를 떠나는 이동이라 살릴 근거가 없다.
+ */
+export function moveNode(raw: string, id: string, afterId: string): string {
+    if (id === afterId) return raw;
+    const ctx = openEdit(raw);
+    if (!ctx) return raw;
+    const { lines, range, newline } = ctx;
+
+    const defs = collectDefinitions(lines, range);
+    const movedExpr = defs.get(id) ?? id;
+    const indent = indentOf(lines, range);
+
+    // 1) 원래 자리에서 떼어낸다.
+    const incoming: string[] = [];
+    const outgoing: string[] = [];
+    const removeAt: number[] = [];
+    for (let i = range.start; i < range.end; i++) {
+        const edge = parseEdgeLine(lines[i]);
+        if (edge) {
+            const from = idOf(edge.left);
+            const to = idOf(edge.right);
+            if (from === id || to === id) {
+                if (to === id) incoming.push(from);
+                if (from === id) outgoing.push(to);
+                removeAt.push(i);
+            }
+            continue;
+        }
+        const nodeOnly = NODE_LINE.exec(lines[i]);
+        if (nodeOnly && idOf(nodeOnly[2]) === id) removeAt.push(i);
+    }
+    const reconnect: string[] = [];
+    for (const from of incoming) {
+        for (const to of outgoing) {
+            if (from === to || from === afterId) continue;
+            reconnect.push(indent + from + " --> " + to);
+        }
+    }
+    const insertAt = removeAt.length > 0 ? removeAt[0] : range.end;
+    for (const i of [...removeAt].reverse()) lines.splice(i, 1);
+    lines.splice(insertAt, 0, ...reconnect);
+
+    // 2) 대상 뒤에 끼워 넣는다 — 대상의 나가는 간선을 이 노드 뒤로 민다.
+    const after = diagramRange(lines);
+    if (!after) return raw;
+    let firstTouched = -1;
+    for (let i = after.start; i < after.end; i++) {
+        const edge = parseEdgeLine(lines[i]);
+        if (!edge || idOf(edge.left) !== afterId) continue;
+        lines[i] = edge.indent + id + " " + edge.arrow + " " + edge.right;
+        if (firstTouched === -1) firstTouched = i;
+    }
+    const link = indent + afterId + " --> " + movedExpr;
+    lines.splice(firstTouched !== -1 ? firstTouched : after.end, 0, link);
+
+    restoreDefinitions(lines, defs);
+    return lines.join(newline);
+}

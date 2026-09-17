@@ -81,20 +81,22 @@ export interface FlowPanelOptions {
     onLabel: (id: string, shape: FlowShape, label: string) => void;
     /** 노드 id 변경 — 그림과 REFERENCES를 함께 고친다. */
     onRename: (oldId: string, newId: string) => void;
-    /** 선택 노드 앞/뒤에 새 노드 추가. */
-    onAdd: (anchorId: string, position: "before" | "after", shape: FlowShape, label: string) => void;
+    /**
+     * 선택 노드 뒤에 새 노드를 만든다.
+     * - `parallel`: 갈래를 하나 더 낸다(기존 갈래는 그대로).
+     * - `insert`: 기존 갈래를 새 노드 뒤로 밀어 사이에 끼운다.
+     */
+    onAdd: (anchorId: string, mode: "parallel" | "insert", shape: FlowShape, label: string) => void;
+    /** 선택 노드를 대상 노드 뒤로 옮긴다. */
+    onMove: (id: string, afterId: string) => void;
     /** 선택 노드 삭제. */
     onDelete: (id: string) => void;
-    /** 선택 노드를 새 FLOW 파일로 빼낸다(그 자리는 하위 흐름 도형이 된다). */
-    onExtract: (id: string) => void;
     /** 간선의 조건 라벨 변경(빈 문자열이면 라벨 제거). */
     onEdgeLabel: (line: number, label: string) => void;
     /** 그 간선 하나에만 노드를 끼워 넣는다. */
     onEdgeInsert: (line: number) => void;
     /** 간선 삭제. */
     onEdgeDelete: (line: number) => void;
-    /** 선택 노드에서 나가는 갈래 추가 — targetId가 null이면 새 노드를 만든다. */
-    onAddEdge: (fromId: string, targetId: string | null, label: string) => void;
     /** 간선별 조건 라벨(줄 번호 → 라벨) — 원문에서 읽어 넘긴다. */
     edgeLabels?: Map<number, string>;
     /** 방금 노드를 만든 직후인지 — 임시 라벨을 바로 고쳐 쓰도록 입력칸에 포커스를 준다. */
@@ -121,8 +123,8 @@ export function renderFlowPanel(container: HTMLElement, opts: FlowPanelOptions):
         labelInput?.focus();
         labelInput?.select();
     }
-    renderStructure(container, opts, selected);
     renderEdges(container, opts, selected);
+    renderStructure(container, opts, selected);
     renderRefSection(container, opts, selected);
     renderOrphanWarning(container, doc);
 }
@@ -188,12 +190,12 @@ function renderIdentity(container: HTMLElement, opts: FlowPanelOptions, selected
     idInput.addEventListener("change", applyId);
 }
 
-/** 앞뒤로 노드를 붙이거나 지우는 자리. */
+/** 노드를 붙이고, 옮기고, 지우는 자리. */
 function renderStructure(container: HTMLElement, opts: FlowPanelOptions, selected: FlowNode): void {
     const box = document.createElement("div");
     box.className = "flow-panel-section";
     box.innerHTML = `
-        <div class="flow-panel-label">노드 추가·삭제</div>
+        <div class="flow-panel-label">노드 추가·이동·삭제</div>
         <div class="flow-field">
             <span class="flow-field-name">종류</span>
             <select class="flow-input" data-role="new-shape">${shapeOptions("step")}</select>
@@ -203,21 +205,35 @@ function renderStructure(container: HTMLElement, opts: FlowPanelOptions, selecte
             <input class="flow-input" data-role="new-label" placeholder="새 노드 라벨" spellcheck="false" />
         </div>
         <div class="flow-buttons">
-            <button class="tb-btn" data-role="add-before">◀ 앞에 추가</button>
-            <button class="tb-btn" data-role="add-after">뒤에 추가 ▶</button>
+            <button class="tb-btn" data-role="add-parallel" title="갈래를 하나 더 낸다 — 기존 갈래는 그대로">⑂ 병렬 추가</button>
+            <button class="tb-btn" data-role="add-insert" title="기존 갈래를 새 노드 뒤로 밀어 사이에 끼운다">↳ 삽입 추가</button>
         </div>
-        <button class="tb-btn" data-role="extract">이 노드를 새 FLOW로 빼내기</button>
+        <div class="flow-field">
+            <span class="flow-field-name">이동</span>
+            <select class="flow-input" data-role="move-target"></select>
+            <button class="tb-btn flow-edge-btn" data-role="move" title="선택한 노드를 이 노드 뒤로 옮긴다">▸</button>
+        </div>
         <button class="tb-btn tb-btn--danger" data-role="delete">이 노드 삭제</button>
     `;
     container.appendChild(box);
 
     const shapeSel = box.querySelector<HTMLSelectElement>('[data-role="new-shape"]')!;
     const labelInput = box.querySelector<HTMLInputElement>('[data-role="new-label"]')!;
-    const buttons = Array.from(box.querySelectorAll<HTMLButtonElement>("button"));
+    const moveSel = box.querySelector<HTMLSelectElement>('[data-role="move-target"]')!;
+    for (const n of opts.doc.nodes) {
+        if (n.id === selected.id) continue;
+        const o = document.createElement("option");
+        o.value = n.id;
+        o.textContent = n.label || n.id;
+        moveSel.appendChild(o);
+    }
+    if (moveSel.options.length === 0) {
+        moveSel.innerHTML = `<option value="">옮길 자리 없음</option>`;
+    }
 
     if (opts.doc.structureLock) {
-        for (const el of [shapeSel, labelInput, ...buttons]) {
-            el.disabled = true;
+        for (const el of Array.from(box.querySelectorAll<HTMLElement>("input,select,button"))) {
+            (el as HTMLInputElement).disabled = true;
             el.title = opts.doc.structureLock;
         }
         const note = document.createElement("div");
@@ -227,18 +243,18 @@ function renderStructure(container: HTMLElement, opts: FlowPanelOptions, selecte
         return;
     }
 
-    const add = (position: "before" | "after") => {
-        const shape = shapeSel.value as FlowShape;
+    const add = (mode: "parallel" | "insert") => {
         // 병합점은 라벨이 없는 것이 규약이라(`appendix/FLOW.md`) 빈 라벨을 그대로 허용한다.
-        opts.onAdd(selected.id, position, shape, labelInput.value.trim());
+        opts.onAdd(selected.id, mode, shapeSel.value as FlowShape, labelInput.value.trim());
         labelInput.value = "";
     };
-    box.querySelector('[data-role="add-before"]')!.addEventListener("click", () => add("before"));
-    box.querySelector('[data-role="add-after"]')!.addEventListener("click", () => add("after"));
-    box.querySelector('[data-role="extract"]')!.addEventListener("click", () => opts.onExtract(selected.id));
+    box.querySelector('[data-role="add-parallel"]')!.addEventListener("click", () => add("parallel"));
+    box.querySelector('[data-role="add-insert"]')!.addEventListener("click", () => add("insert"));
+    box.querySelector('[data-role="move"]')!.addEventListener("click", () => {
+        if (moveSel.value) opts.onMove(selected.id, moveSel.value);
+    });
     box.querySelector('[data-role="delete"]')!.addEventListener("click", () => opts.onDelete(selected.id));
 }
-
 
 /** 노드에 붙은 화살표들 — 조건 라벨 수정, 그 갈래에만 끼워 넣기, 갈래 추가·삭제. */
 function renderEdges(container: HTMLElement, opts: FlowPanelOptions, selected: FlowNode): void {
@@ -286,33 +302,6 @@ function renderEdges(container: HTMLElement, opts: FlowPanelOptions, selected: F
         box.appendChild(empty);
     }
 
-    // 새 갈래 — 분기에서 세 번째 갈래를 내는 자리이자, 기존 노드로 합류시키는 자리.
-    const adder = document.createElement("div");
-    adder.className = "flow-edge flow-edge--new";
-    adder.innerHTML = `
-        <input class="flow-input flow-edge-label" data-role="new-edge-label" placeholder="조건" spellcheck="false" />
-        <select class="flow-input flow-edge-target" data-role="new-edge-target">
-            <option value="">새 노드</option>
-        </select>
-        <button class="tb-btn flow-edge-btn" data-role="add-edge" title="갈래 추가">+</button>
-    `;
-    const targetSel = adder.querySelector<HTMLSelectElement>('[data-role="new-edge-target"]')!;
-    for (const n of opts.doc.nodes) {
-        if (n.id === selected.id) continue;
-        const o = document.createElement("option");
-        o.value = n.id;
-        o.textContent = n.label || n.id;
-        targetSel.appendChild(o);
-    }
-    const labelInput = adder.querySelector<HTMLInputElement>('[data-role="new-edge-label"]')!;
-    for (const c of Array.from(adder.querySelectorAll<HTMLElement>("input,select,button"))) {
-        (c as HTMLInputElement).disabled = locked;
-        if (locked) c.title = opts.doc.structureLock!;
-    }
-    adder.querySelector('[data-role="add-edge"]')!.addEventListener("click", () => {
-        opts.onAddEdge(selected.id, targetSel.value || null, labelInput.value.trim());
-    });
-    box.appendChild(adder);
 }
 
 /** 패널이 그려질 때의 원문 기준 간선 라벨 — 호출부가 넘겨준 doc에는 없어 따로 읽는다. */

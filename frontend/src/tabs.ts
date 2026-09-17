@@ -6,7 +6,6 @@ import {
     writeProjectFile,
     readExternalFile,
     deleteProjectFile,
-    createElement,
     gitFileHistory,
     gitFileAtCommit,
 } from "./fs";
@@ -26,6 +25,7 @@ import {
     setNodeLabel,
     renameNodeId,
     nextNodeId,
+    moveNode,
     setEdgeLabel,
     insertOnEdge,
     deleteEdge,
@@ -542,19 +542,37 @@ export class TabManager {
                     tab.selectedFlowNodeId = newId;
                     void refresh(true);
                 },
-                onAdd: (anchorId, position, shape, label) => {
-                    // 갈래가 여럿인 노드에 끼워 넣으면 그 갈래가 **전부** 새 노드를
-                    // 거치게 된다 — 분기 조건 라벨도 새 노드 뒤로 옮겨가 의미가 바뀐다.
-                    // 특정 갈래 하나만 고르는 건 간선 편집(E3)의 몫이라, 여기선 먼저 알린다.
-                    const branching = doc.edges.filter((e) => (position === "after" ? e.from : e.to) === anchorId);
-                    if (branching.length > 1) {
-                        const dir = position === "after" ? "나가는" : "들어오는";
-                        if (!confirm(`이 노드에서 ${dir} 화살표가 ${branching.length}개입니다. 모두 새 노드를 거치게 되고, 화살표에 붙은 조건 라벨도 함께 옮겨갑니다. 계속할까요?`)) return;
-                    }
+                onAdd: (anchorId, mode, shape, label) => {
                     const id = nextNodeId(doc, shape);
-                    this.applyFlowEdit(tab, addNode(tab.content, { anchorId, position, id, shape, label }));
+                    if (mode === "parallel") {
+                        // 갈래를 하나 더 낸다 — 기존 갈래는 건드리지 않는다. 조건 라벨은
+                        // 바로 위 화살표 목록에서 붙이면 되므로 여기선 묻지 않는다.
+                        this.applyFlowEdit(tab, addEdge(tab.content, anchorId, { id, shape, label }, ""));
+                    } else {
+                        // 삽입은 나가는 갈래를 **전부** 새 노드 뒤로 민다 — 갈래가 여럿이면
+                        // 조건 라벨까지 함께 옮겨가 의미가 바뀐다.
+                        const branching = doc.edges.filter((e) => e.from === anchorId);
+                        if (branching.length > 1) {
+                            const ok = confirm(
+                                `이 노드에서 나가는 화살표가 ${branching.length}개입니다. 모두 새 노드를 거치게 되고 조건 라벨도 함께 옮겨갑니다.` +
+                                    " 갈래 하나에만 넣으려면 위 화살표 목록의 ↳를 쓰세요. 계속할까요?",
+                            );
+                            if (!ok) return;
+                        }
+                        this.applyFlowEdit(tab, addNode(tab.content, { anchorId, position: "after", id, shape, label }));
+                    }
                     tab.selectedFlowNodeId = id; // 방금 만든 노드를 이어서 다루게 된다
                     focusLabelOnce = true; // 임시 라벨이 들어갔을 수 있으니 바로 고쳐 쓰게
+                    void refresh(true);
+                },
+                onMove: (id, afterId) => {
+                    const nameOf = (n: string) => doc.nodes.find((x) => x.id === n)?.label || n;
+                    const ok = confirm(
+                        `"${nameOf(id)}"를 "${nameOf(afterId)}" 뒤로 옮깁니다. 원래 자리의 앞뒤는 곧바로 이어지고,` +
+                            " 그 자리에 붙어 있던 조건 라벨은 사라집니다. 계속할까요?",
+                    );
+                    if (!ok) return;
+                    this.applyFlowEdit(tab, moveNode(tab.content, id, afterId));
                     void refresh(true);
                 },
                 onEdgeLabel: (line, label) => {
@@ -576,18 +594,6 @@ export class TabManager {
                     this.applyFlowEdit(tab, deleteEdge(tab.content, line));
                     void refresh(true);
                 },
-                onAddEdge: (fromId, targetId, label) => {
-                    if (targetId) {
-                        this.applyFlowEdit(tab, addEdge(tab.content, fromId, { existingId: targetId }, label));
-                    } else {
-                        const id = nextNodeId(doc, "step");
-                        this.applyFlowEdit(tab, addEdge(tab.content, fromId, { id, shape: "step", label: "" }, label));
-                        tab.selectedFlowNodeId = id;
-                        focusLabelOnce = true;
-                    }
-                    void refresh(true);
-                },
-                onExtract: (id) => void this.extractToFlow(tab, id, refresh),
                 onDelete: (id) => {
                     const node = doc.nodes.find((n) => n.id === id);
                     const hasLabeledEdge = doc.edges.some((e) => e.from === id || e.to === id);
@@ -608,68 +614,6 @@ export class TabManager {
             void refresh(false);
         });
         await refresh(true);
-    }
-
-    /**
-     * 선택 노드를 새 FLOW 파일로 빼낸다 — 그 자리는 하위 흐름(`[[ ]]`) 도형이 되고
-     * `REFERENCES`가 새 파일을 가리킨다. 한 단계가 커졌을 때 흐름을 쪼개는 통로다.
-     */
-    private async extractToFlow(tab: Tab, id: string, refresh: (redraw: boolean) => Promise<void>): Promise<void> {
-        const doc = parseFlow(tab.content);
-        const node = doc.nodes.find((n) => n.id === id);
-        if (!node) return;
-        if (node.ref && !confirm(`이 노드는 이미 "${node.ref}"에 연결돼 있습니다. 새 FLOW로 바꿀까요?`)) return;
-
-        const name = prompt("새 FLOW 이름:", node.label || id);
-        if (name === null) return;
-        const trimmed = name.trim();
-        if (!trimmed) return;
-
-        let path: string;
-        try {
-            path = await createElement("FLOW", trimmed);
-        } catch (err) {
-            logError("FLOW 생성 실패", err);
-            alert(`생성 실패: ${err instanceof Error ? err.message : String(err)}`);
-            return;
-        }
-        const filename = path.split("/").pop()!;
-
-        // 스캐폴딩 대신 빼낸 맥락(SUMMARY·PARENT·첫 단계)을 채워 넣는다.
-        const body = [
-            "### IDENTITY",
-            `- SUMMARY: ${node.label || trimmed}`,
-            "",
-            "### CONNECTIONS",
-            `- PARENT: ${fileNameOf(tab.path)}`,
-            "- REFERENCE: []",
-            "",
-            "### DIAGRAM",
-            "```mermaid",
-            "flowchart LR",
-            `    begin((시작)) --> s1[${node.label || trimmed}]`,
-            "    s1 --> done((끝))",
-            "```",
-            "",
-            "### REFERENCES",
-            "",
-            "### ISSUE",
-            "",
-        ].join(NL);
-        try {
-            await writeProjectFile(path, body);
-        } catch (err) {
-            logError(`FLOW 초기 내용 저장 실패: ${path}`, err);
-        }
-
-        // 원래 그림에서는 그 노드를 하위 흐름 도형으로 바꾸고 새 파일을 가리키게 한다.
-        let next = setNodeLabel(tab.content, id, "subflow", node.label);
-        next = setNodeRef(next, id, filename);
-        this.applyFlowEdit(tab, next);
-        await refresh(true);
-        this.onTreeChanged?.();
-        logInfo(`노드를 새 FLOW로 빼냄: ${id} → ${path}`);
-        await this.openByFilename(filename);
     }
 
     /** DIAGRAM의 mermaid만 떼어 캔버스에 다시 그린다. */

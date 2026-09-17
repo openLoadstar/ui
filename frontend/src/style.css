@@ -1683,12 +1683,6 @@ mark.find-hit--current {
     flex-shrink: 0;
 }
 
-.flow-edge--new {
-    margin-top: 4px;
-    padding-top: 8px;
-    border-top: 1px dashed var(--border);
-}
-
 .flow-panel-orphans {
     border-top: 1px solid var(--border);
     padding-top: 10px;
