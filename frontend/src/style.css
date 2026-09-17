@@ -1601,6 +1601,61 @@ mark.find-hit--current {
     text-overflow: ellipsis;
 }
 
+.flow-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.flow-field-name {
+    width: 34px;
+    flex-shrink: 0;
+    color: var(--text-dim);
+    font-size: 11px;
+}
+
+.flow-input {
+    flex: 1;
+    min-width: 0;
+    padding: 3px 6px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.flow-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.flow-input:disabled {
+    color: var(--text-dim);
+    cursor: default;
+}
+
+.flow-field-error {
+    color: var(--danger);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.flow-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.flow-buttons .tb-btn {
+    flex: 1;
+}
+
+.flow-panel-lock {
+    color: var(--danger);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
 .flow-panel-orphans {
     border-top: 1px solid var(--border);
     padding-top: 10px;

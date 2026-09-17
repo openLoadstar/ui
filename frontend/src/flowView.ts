@@ -20,6 +20,14 @@ export const SHAPE_LABEL: Record<FlowShape, string> = {
     terminal: "시작·종료",
 };
 
+const SHAPE_ORDER: FlowShape[] = ["step", "branch", "merge", "subflow", "store", "terminal"];
+
+function shapeOptions(selected: FlowShape): string {
+    return SHAPE_ORDER.map(
+        (s) => `<option value="${s}"${s === selected ? " selected" : ""}>${SHAPE_LABEL[s]}</option>`,
+    ).join("");
+}
+
 /**
  * 렌더가 끝난 SVG 노드에 id를 심고 상태 클래스를 붙인다.
  *
@@ -69,53 +77,163 @@ export interface FlowPanelOptions {
     onLink: (id: string, filename: string | null) => void;
     /** 연결된 요소를 탭으로 연다. */
     onOpenRef: (filename: string) => void;
+    /** 라벨·종류 변경. */
+    onLabel: (id: string, shape: FlowShape, label: string) => void;
+    /** 노드 id 변경 — 그림과 REFERENCES를 함께 고친다. */
+    onRename: (oldId: string, newId: string) => void;
+    /** 선택 노드 앞/뒤에 새 노드 추가. */
+    onAdd: (anchorId: string, position: "before" | "after", shape: FlowShape, label: string) => void;
+    /** 선택 노드 삭제. */
+    onDelete: (id: string) => void;
 }
 
-/**
- * 그림 편집 모드의 우측 속성 패널. 지금 할 수 있는 편집은 "노드에 요소 연결/해제"
- * 뿐이다 — 그림 구조(노드 추가·삭제)는 다음 단계이며, 그건 `DIAGRAM` 코드블록을
- * 건드리므로 별도로 다룬다(`[WP][2.0][2026.09.17]흐름(FLOW) 요소.md`).
- */
+/** 그림 편집 모드의 우측 속성 패널. */
 export function renderFlowPanel(container: HTMLElement, opts: FlowPanelOptions): void {
     const { doc, selected } = opts;
+    container.innerHTML = "";
 
     if (!selected) {
-        const hint = doc.problem
-            ? `⚠️ ${doc.problem}`
-            : "그림에서 노드를 클릭하면 여기에 속성이 나옵니다.";
-        container.innerHTML = `<div class="flow-panel-empty"></div>`;
-        container.querySelector(".flow-panel-empty")!.textContent = hint;
+        const hint = document.createElement("div");
+        hint.className = "flow-panel-empty";
+        hint.textContent = doc.problem ?? "그림에서 노드를 클릭하면 여기에 속성이 나옵니다.";
+        container.appendChild(hint);
         renderOrphanWarning(container, doc);
         return;
     }
 
-    container.innerHTML = `
-        <div class="flow-panel-section">
-            <div class="flow-panel-label">노드</div>
-            <div class="flow-panel-node">
-                <code class="flow-panel-id"></code>
-                <span class="flow-panel-shape"></span>
-            </div>
-            <div class="flow-panel-nodelabel"></div>
+    renderIdentity(container, opts, selected);
+    renderStructure(container, opts, selected);
+    renderRefSection(container, opts, selected);
+    renderOrphanWarning(container, doc);
+}
+
+/** id·종류·라벨 — 있는 노드를 고치는 자리. */
+function renderIdentity(container: HTMLElement, opts: FlowPanelOptions, selected: FlowNode): void {
+    const box = document.createElement("div");
+    box.className = "flow-panel-section";
+    box.innerHTML = `
+        <div class="flow-panel-label">노드</div>
+        <div class="flow-field">
+            <span class="flow-field-name">id</span>
+            <input class="flow-input" data-role="id" spellcheck="false" />
         </div>
-        <div class="flow-panel-section">
-            <div class="flow-panel-label">연결된 요소</div>
-            <div class="flow-panel-ref"></div>
+        <div class="flow-field">
+            <span class="flow-field-name">종류</span>
+            <select class="flow-input" data-role="shape">${shapeOptions(selected.shape)}</select>
         </div>
-        <div class="flow-panel-section flow-panel-section--grow">
-            <div class="flow-panel-label">연결할 요소 고르기</div>
-            <input class="flow-panel-filter" type="text" placeholder="이름으로 좁히기" spellcheck="false" />
-            <div class="flow-panel-candidates">불러오는 중…</div>
+        <div class="flow-field">
+            <span class="flow-field-name">라벨</span>
+            <input class="flow-input" data-role="label" spellcheck="false" />
         </div>
+        <div class="flow-field-error" hidden></div>
     `;
-    container.querySelector(".flow-panel-id")!.textContent = selected.id;
-    container.querySelector(".flow-panel-shape")!.textContent = SHAPE_LABEL[selected.shape];
-    container.querySelector(".flow-panel-nodelabel")!.textContent = selected.label || "(라벨 없음)";
+    container.appendChild(box);
 
-    renderRef(container.querySelector<HTMLElement>(".flow-panel-ref")!, selected, opts);
+    const idInput = box.querySelector<HTMLInputElement>('[data-role="id"]')!;
+    const shapeSel = box.querySelector<HTMLSelectElement>('[data-role="shape"]')!;
+    const labelInput = box.querySelector<HTMLInputElement>('[data-role="label"]')!;
+    const error = box.querySelector<HTMLElement>(".flow-field-error")!;
+    idInput.value = selected.id;
+    labelInput.value = selected.label;
 
-    const filterEl = container.querySelector<HTMLInputElement>(".flow-panel-filter")!;
-    const listEl = container.querySelector<HTMLElement>(".flow-panel-candidates")!;
+    const lock = opts.doc.structureLock;
+    for (const el of [idInput, shapeSel, labelInput]) {
+        el.disabled = lock !== null;
+        if (lock) el.title = lock;
+    }
+
+    const applyLabel = () => opts.onLabel(selected.id, shapeSel.value as FlowShape, labelInput.value);
+    labelInput.addEventListener("change", applyLabel);
+    shapeSel.addEventListener("change", applyLabel);
+
+    const applyId = () => {
+        const next = idInput.value.trim();
+        if (next === selected.id) return;
+        // id는 REFERENCES의 키이자 그림 위에서 노드를 찾는 키다(`appendix/FLOW.md`).
+        if (!/^[A-Za-z_]\w*$/.test(next)) {
+            error.hidden = false;
+            error.textContent = "id는 영문자·숫자·밑줄만 쓸 수 있고 숫자로 시작할 수 없습니다.";
+            idInput.value = selected.id;
+            return;
+        }
+        if (opts.doc.nodes.some((n) => n.id === next)) {
+            error.hidden = false;
+            error.textContent = `이미 있는 id입니다: ${next}`;
+            idInput.value = selected.id;
+            return;
+        }
+        error.hidden = true;
+        opts.onRename(selected.id, next);
+    };
+    idInput.addEventListener("change", applyId);
+}
+
+/** 앞뒤로 노드를 붙이거나 지우는 자리. */
+function renderStructure(container: HTMLElement, opts: FlowPanelOptions, selected: FlowNode): void {
+    const box = document.createElement("div");
+    box.className = "flow-panel-section";
+    box.innerHTML = `
+        <div class="flow-panel-label">노드 추가·삭제</div>
+        <div class="flow-field">
+            <span class="flow-field-name">종류</span>
+            <select class="flow-input" data-role="new-shape">${shapeOptions("step")}</select>
+        </div>
+        <div class="flow-field">
+            <span class="flow-field-name">라벨</span>
+            <input class="flow-input" data-role="new-label" placeholder="새 노드 라벨" spellcheck="false" />
+        </div>
+        <div class="flow-buttons">
+            <button class="tb-btn" data-role="add-before">◀ 앞에 추가</button>
+            <button class="tb-btn" data-role="add-after">뒤에 추가 ▶</button>
+        </div>
+        <button class="tb-btn tb-btn--danger" data-role="delete">이 노드 삭제</button>
+    `;
+    container.appendChild(box);
+
+    const shapeSel = box.querySelector<HTMLSelectElement>('[data-role="new-shape"]')!;
+    const labelInput = box.querySelector<HTMLInputElement>('[data-role="new-label"]')!;
+    const buttons = Array.from(box.querySelectorAll<HTMLButtonElement>("button"));
+
+    if (opts.doc.structureLock) {
+        for (const el of [shapeSel, labelInput, ...buttons]) {
+            el.disabled = true;
+            el.title = opts.doc.structureLock;
+        }
+        const note = document.createElement("div");
+        note.className = "flow-panel-lock";
+        note.textContent = `구조 편집 잠김 — ${opts.doc.structureLock} 텍스트 편집 모드에서 직접 고칠 수 있습니다.`;
+        box.appendChild(note);
+        return;
+    }
+
+    const add = (position: "before" | "after") => {
+        const shape = shapeSel.value as FlowShape;
+        // 병합점은 라벨이 없는 것이 규약이라(`appendix/FLOW.md`) 빈 라벨을 그대로 허용한다.
+        opts.onAdd(selected.id, position, shape, labelInput.value.trim());
+        labelInput.value = "";
+    };
+    box.querySelector('[data-role="add-before"]')!.addEventListener("click", () => add("before"));
+    box.querySelector('[data-role="add-after"]')!.addEventListener("click", () => add("after"));
+    box.querySelector('[data-role="delete"]')!.addEventListener("click", () => opts.onDelete(selected.id));
+}
+
+/** 연결된 요소 + 고르기 목록. */
+function renderRefSection(container: HTMLElement, opts: FlowPanelOptions, selected: FlowNode): void {
+    const box = document.createElement("div");
+    box.className = "flow-panel-section flow-panel-section--grow";
+    box.innerHTML = `
+        <div class="flow-panel-label">연결된 요소</div>
+        <div class="flow-panel-ref"></div>
+        <div class="flow-panel-label">연결할 요소 고르기</div>
+        <input class="flow-panel-filter" type="text" placeholder="이름으로 좁히기" spellcheck="false" />
+        <div class="flow-panel-candidates">불러오는 중…</div>
+    `;
+    container.appendChild(box);
+
+    renderRef(box.querySelector<HTMLElement>(".flow-panel-ref")!, selected, opts);
+
+    const filterEl = box.querySelector<HTMLInputElement>(".flow-panel-filter")!;
+    const listEl = box.querySelector<HTMLElement>(".flow-panel-candidates")!;
     void loadLinkCandidates().then((candidates) => {
         const draw = () => {
             const q = filterEl.value.trim().toLowerCase();
@@ -138,8 +256,6 @@ export function renderFlowPanel(container: HTMLElement, opts: FlowPanelOptions):
         filterEl.addEventListener("input", draw);
         draw();
     });
-
-    renderOrphanWarning(container, doc);
 }
 
 function renderRef(el: HTMLElement, selected: FlowNode, opts: FlowPanelOptions): void {

@@ -423,6 +423,12 @@ function startExplorer(projectRoot: string): void {
             tabs.openFind();
             return;
         }
+        // 그림 편집은 textarea가 아니라 구조 조작이라 브라우저 기본 undo가 없다.
+        // 그림 편집 모드가 아닐 때는 기본 동작(텍스트 실행취소)을 그대로 둔다.
+        if (ctrl && !e.shiftKey && (e.key === "z" || e.key === "Z")) {
+            if (tabs.undoFlowEdit()) e.preventDefault();
+            return;
+        }
         if (e.key === "F3") {
             e.preventDefault();
             tabs.findNext(e.shiftKey ? -1 : 1);

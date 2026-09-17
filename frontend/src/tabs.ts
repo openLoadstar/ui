@@ -9,7 +9,16 @@ import { logInfo, logError } from "./log";
 import { FindBar, type FindTarget } from "./find";
 import { fillHistorySelect, WORKING_TREE } from "./historySelect";
 import type { main } from "../wailsjs/go/models";
-import { parseFlow, setNodeRef, extractDiagram } from "./flowFile";
+import {
+    parseFlow,
+    setNodeRef,
+    extractDiagram,
+    addNode,
+    deleteNode,
+    setNodeLabel,
+    renameNodeId,
+    nextNodeId,
+} from "./flowFile";
 import { markFlowNodes, flowNodeIdFromEvent, renderFlowPanel } from "./flowView";
 
 // FLOW 탭에만 "diagram"(그림 편집)이 추가된다 — 그림에서 노드를 고르고
@@ -46,9 +55,17 @@ interface Tab {
     historyContent: string;
     /** FLOW 탭의 그림 편집 모드에서 지금 선택된 노드 id. */
     selectedFlowNodeId: string | null;
+    /**
+     * 그림 편집 되돌리기 — 편집 직전 내용을 쌓아둔다. textarea와 달리 구조 편집엔
+     * 브라우저 기본 undo가 없어서 직접 들고 있어야 한다.
+     */
+    flowUndo: string[];
 }
 
 const NL = String.fromCharCode(10);
+
+/** 그림 편집 되돌리기 깊이 — 더 필요하면 늘리면 되지만, 저장 전 텍스트 모드가 최종 안전망이다. */
+const FLOW_UNDO_LIMIT = 30;
 
 function fileNameOf(path: string): string {
     return path.split(/[\\/]/).pop() ?? path;
@@ -58,6 +75,8 @@ export class TabManager {
     private tabs: Tab[] = [];
     private activeId: string | null = null;
     private tabScrollEl: HTMLElement;
+    /** 지금 열려 있는 그림 편집 화면을 다시 그리는 함수(되돌리기에서 재사용). */
+    private flowRefresh: ((redraw: boolean) => Promise<void>) | null = null;
     /** 찾기 바는 탭마다 새로 만들지 않고 하나를 재사용한다(find.ts 주석 참조). */
     private findBar = new FindBar();
     private prevBtn: HTMLButtonElement;
@@ -142,6 +161,7 @@ export class TabManager {
             viewingHash: null,
             historyContent: "",
             selectedFlowNodeId: null,
+            flowUndo: [],
         };
         this.tabs.push(tab);
         this.activeId = tab.id;
@@ -186,6 +206,7 @@ export class TabManager {
             viewingHash: null,
             historyContent: "",
             selectedFlowNodeId: null,
+            flowUndo: [],
         };
         this.tabs.push(tab);
         this.activeId = tab.id;
@@ -333,6 +354,7 @@ export class TabManager {
 
     private async renderActive(): Promise<void> {
         this.renderTabBar();
+        this.flowRefresh = null; // 이전 그림 편집 화면의 DOM을 붙잡고 있지 않도록
 
         const tab = this.activeTab();
         if (!tab) {
@@ -476,44 +498,99 @@ export class TabManager {
         const canvas = body.querySelector<HTMLElement>(".flow-canvas")!;
         const panel = body.querySelector<HTMLElement>(".flow-panel")!;
 
-        const diagram = extractDiagram(tab.content);
-        if (diagram === null) {
-            canvas.innerHTML = `<div class="viewer-empty">⚠️ DIAGRAM 섹션에서 mermaid 코드블록을 찾지 못했습니다. 텍스트 편집으로 확인하세요.</div>`;
-        } else {
-            try {
-                // 문서 전체가 아니라 그림만 다시 그린다 — 편집 모드에서는 그림이 주인공이다.
-                await renderMarkdown(canvas, "```mermaid" + NL + diagram + NL + "```");
-            } catch (err) {
-                logError(`흐름도 렌더링 실패: ${tab.path}`, err);
-                canvas.innerHTML = `<div class="viewer-empty">⚠️ 흐름도를 그리는 중 오류가 발생했습니다.</div>`;
-            }
-        }
-
-        // 연결이 바뀔 때마다 그림을 다시 그리지 않는다 — REFERENCES는 그림 모양을
-        // 바꾸지 않으므로 노드 클래스와 패널만 갱신하면 된다(선택·스크롤 유지).
-        const refresh = () => {
+        // 연결(REFERENCES)만 바뀔 때는 그림을 다시 그리지 않는다 — 그림 모양이
+        // 그대로라 선택·스크롤을 유지하는 편이 낫다. 구조가 바뀌면 다시 그린다.
+        const refresh = async (redraw: boolean): Promise<void> => {
+            if (redraw) await this.drawFlowCanvas(canvas, tab);
             const doc = parseFlow(tab.content);
             markFlowNodes(canvas, doc, tab.selectedFlowNodeId);
             renderFlowPanel(panel, {
                 doc,
                 selected: doc.nodes.find((n) => n.id === tab.selectedFlowNodeId) ?? null,
-                onLink: (id, filename) => {
-                    tab.content = setNodeRef(tab.content, id, filename);
-                    if (!tab.dirty) {
-                        tab.dirty = true;
-                        this.renderTabBar();
-                    }
-                    refresh();
-                },
                 onOpenRef: (filename) => void this.openByFilename(filename),
+                onLink: (id, filename) => {
+                    this.applyFlowEdit(tab, setNodeRef(tab.content, id, filename));
+                    void refresh(false);
+                },
+                onLabel: (id, shape, label) => {
+                    this.applyFlowEdit(tab, setNodeLabel(tab.content, id, shape, label));
+                    void refresh(true);
+                },
+                onRename: (oldId, newId) => {
+                    this.applyFlowEdit(tab, renameNodeId(tab.content, oldId, newId));
+                    tab.selectedFlowNodeId = newId;
+                    void refresh(true);
+                },
+                onAdd: (anchorId, position, shape, label) => {
+                    // 갈래가 여럿인 노드에 끼워 넣으면 그 갈래가 **전부** 새 노드를
+                    // 거치게 된다 — 분기 조건 라벨도 새 노드 뒤로 옮겨가 의미가 바뀐다.
+                    // 특정 갈래 하나만 고르는 건 간선 편집(E3)의 몫이라, 여기선 먼저 알린다.
+                    const branching = doc.edges.filter((e) => (position === "after" ? e.from : e.to) === anchorId);
+                    if (branching.length > 1) {
+                        const dir = position === "after" ? "나가는" : "들어오는";
+                        if (!confirm(`이 노드에서 ${dir} 화살표가 ${branching.length}개입니다. 모두 새 노드를 거치게 되고, 화살표에 붙은 조건 라벨도 함께 옮겨갑니다. 계속할까요?`)) return;
+                    }
+                    const id = nextNodeId(doc, shape);
+                    this.applyFlowEdit(tab, addNode(tab.content, { anchorId, position, id, shape, label }));
+                    tab.selectedFlowNodeId = id; // 방금 만든 노드를 이어서 다루게 된다
+                    void refresh(true);
+                },
+                onDelete: (id) => {
+                    const node = doc.nodes.find((n) => n.id === id);
+                    const hasLabeledEdge = doc.edges.some((e) => e.from === id || e.to === id);
+                    const warn = hasLabeledEdge
+                        ? `"${node?.label || id}" 노드를 지우고 앞뒤를 이어 붙입니다. 화살표에 붙은 조건 라벨은 사라집니다.`
+                        : `"${node?.label || id}" 노드를 지울까요?`;
+                    if (!confirm(warn)) return;
+                    this.applyFlowEdit(tab, deleteNode(tab.content, id));
+                    tab.selectedFlowNodeId = null;
+                    void refresh(true);
+                },
             });
         };
+        this.flowRefresh = refresh;
 
         canvas.addEventListener("click", (e) => {
             tab.selectedFlowNodeId = flowNodeIdFromEvent(e); // 빈 곳을 누르면 선택 해제
-            refresh();
+            void refresh(false);
         });
-        refresh();
+        await refresh(true);
+    }
+
+    /** DIAGRAM의 mermaid만 떼어 캔버스에 다시 그린다. */
+    private async drawFlowCanvas(canvas: HTMLElement, tab: Tab): Promise<void> {
+        const diagram = extractDiagram(tab.content);
+        if (diagram === null) {
+            canvas.innerHTML = `<div class="viewer-empty">⚠️ DIAGRAM 섹션에서 mermaid 코드블록을 찾지 못했습니다. 텍스트 편집으로 확인하세요.</div>`;
+            return;
+        }
+        try {
+            await renderMarkdown(canvas, "```mermaid" + NL + diagram + NL + "```");
+        } catch (err) {
+            logError(`흐름도 렌더링 실패: ${tab.path}`, err);
+            canvas.innerHTML = `<div class="viewer-empty">⚠️ 흐름도를 그리는 중 오류가 발생했습니다. 텍스트 편집으로 확인하세요.</div>`;
+        }
+    }
+
+    /** 그림 편집 한 번 = 되돌리기 한 칸. 내용이 그대로면 아무 일도 하지 않는다. */
+    private applyFlowEdit(tab: Tab, next: string): void {
+        if (next === tab.content) return;
+        tab.flowUndo.push(tab.content);
+        if (tab.flowUndo.length > FLOW_UNDO_LIMIT) tab.flowUndo.shift();
+        tab.content = next;
+        if (!tab.dirty) {
+            tab.dirty = true;
+            this.renderTabBar();
+        }
+    }
+
+    /** Ctrl+Z — 그림 편집 모드에서만. 되돌릴 게 있으면 true. */
+    undoFlowEdit(): boolean {
+        const tab = this.activeTab();
+        if (!tab || tab.mode !== "diagram" || tab.flowUndo.length === 0) return false;
+        tab.content = tab.flowUndo.pop()!;
+        void this.flowRefresh?.(true);
+        return true;
     }
 
     /**
