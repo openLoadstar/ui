@@ -81,9 +81,12 @@ Shapes carry meaning: `[step]`, `{branch}`, `(( ))` merge, `[[subflow]]`, `[(sto
 | Make a subflow | **Ctrl-click** several nodes, then **⊞** — they become a `subgraph` region of the same diagram |
 | Fold / unfold | The chips above the document in view mode (`⊖` open / `⊕` folded). The file does not change |
 | Rename or dissolve a region | Select a node inside it for the title field and **⊟** |
+| Zoom | `−` / `+` / `맞춤` on the same bar, or `Ctrl` + wheel. `맞춤` fits the width — the percentage next to it is what that currently works out to |
 | Undo | `Ctrl+Z` |
 
 In view mode a node that points at something is outlined, and clicking it opens that element.
+
+Mermaid shrinks a diagram to fit the page, so a flow with dozens of nodes ends up too small to read. Zooming overrides that and the viewer scrolls instead; the zoom stays with the tab, so folding a region or editing the diagram keeps it.
 
 Every edit rewrites only the lines it has to, so comments and hand-written notation survive. A diagram using syntax the editor cannot safely rewrite — a chained `a --> b --> c`, a nested `subgraph` — locks structural editing rather than mangling it, while drawing and element linking carry on. The full rules are in [appendix/FLOW.md](https://github.com/openLoadstar/spec/blob/main/SPEC%202.0/appendix/FLOW.md).
 

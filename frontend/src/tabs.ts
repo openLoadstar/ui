@@ -40,6 +40,7 @@ import {
 } from "./flowFile";
 import { markFlowNodes, flowNodeIdFromEvent, renderFlowPanel } from "./flowView";
 import { collapseGroups } from "./flowCollapse";
+import { attachDiagramZoom, ensureDiagramBar, ZOOM_FIT } from "./diagramZoom";
 
 // FLOW 탭에만 "diagram"(그림 편집)이 추가된다 — 그림에서 노드를 고르고
 // 요소를 연결하는 모드. 원문 편집은 여전히 "edit"(textarea)다.
@@ -88,6 +89,11 @@ interface Tab {
      * 브라우저 기본 undo가 없어서 직접 들고 있어야 한다.
      */
     flowUndo: string[];
+    /**
+     * 그림 배율(0이면 창 폭에 맞춤). 탭이 들고 있어야 접기·편집으로 다시 그려도
+     * 보던 배율이 유지된다(diagramZoom.ts).
+     */
+    diagramZoom: number;
 }
 
 const NL = String.fromCharCode(10);
@@ -191,6 +197,7 @@ export class TabManager {
             selectedFlowNodeIds: [],
             collapsedGroups: new Set<string>(),
             flowUndo: [],
+            diagramZoom: ZOOM_FIT,
         };
         this.tabs.push(tab);
         this.activeId = tab.id;
@@ -237,6 +244,7 @@ export class TabManager {
             selectedFlowNodeIds: [],
             collapsedGroups: new Set<string>(),
             flowUndo: [],
+            diagramZoom: ZOOM_FIT,
         };
         this.tabs.push(tab);
         this.activeId = tab.id;
@@ -488,6 +496,10 @@ export class TabManager {
                 if (lowerPath.endsWith(".md")) {
                     await renderMarkdown(viewerEl, displayed);
                     if (isFlow) await this.renderFlowView(viewerEl, tab, displayed);
+                    // 칩이 먼저 자리를 잡은 뒤에 붙여야 배율이 막대 오른쪽 끝에 온다.
+                    attachDiagramZoom(viewerEl, tab.diagramZoom, (next) => {
+                        tab.diagramZoom = next;
+                    });
                 } else if (isHtml) {
                     renderHtmlFile(viewerEl, displayed);
                 } else {
@@ -543,8 +555,7 @@ export class TabManager {
 
     /** 문서 맨 위에 붙는 하위 흐름 접기 칩. */
     private renderGroupChips(viewerEl: HTMLElement, tab: Tab, groups: { id: string; title: string }[]): void {
-        const bar = document.createElement("div");
-        bar.className = "subflow-bar";
+        const bar = ensureDiagramBar(viewerEl);
         const label = document.createElement("span");
         label.className = "subflow-bar-label";
         label.textContent = "하위 흐름";
@@ -563,7 +574,6 @@ export class TabManager {
             });
             bar.appendChild(chip);
         }
-        viewerEl.prepend(bar);
     }
 
 
@@ -583,7 +593,12 @@ export class TabManager {
         // 노드를 막 만든 직후 한 번만 라벨 입력칸에 포커스를 준다.
         let focusLabelOnce = false;
         const refresh = async (redraw: boolean): Promise<void> => {
-            if (redraw) await this.drawFlowCanvas(canvas, tab);
+            if (redraw) {
+                await this.drawFlowCanvas(canvas, tab);
+                attachDiagramZoom(canvas, tab.diagramZoom, (next) => {
+                    tab.diagramZoom = next;
+                });
+            }
             const doc = parseFlow(tab.content);
             const selectedIds = new Set(tab.selectedFlowNodeIds.filter((id) => doc.nodes.some((n) => n.id === id)));
             tab.selectedFlowNodeIds = [...selectedIds];

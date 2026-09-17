@@ -588,6 +588,13 @@ body.resizing-col {
     overflow-x: auto;
 }
 
+/* 확대 중에는 본문 폭(860px) 안의 좁은 창이 아니라 뷰어 전체를 스크롤해 쓴다.
+   가운데 정렬도 푼다 — 부모보다 넓어지면 왼쪽으로 삐져나간 부분에 스크롤이 닿지 않는다. */
+.md-viewer pre.mermaid.mermaid--zoomed {
+    overflow: visible;
+    text-align: left;
+}
+
 .md-viewer pre.mermaid svg {
     max-width: 100%;
     height: auto;
@@ -1374,15 +1381,57 @@ mark.find-hit--current {
     color: #fff;
 }
 
-/* --- 하위 흐름 펼침 칩 --- */
-.subflow-bar {
+/* --- 그림 위 막대 — 하위 흐름 칩(왼쪽)과 배율(오른쪽)이 같은 줄을 쓴다 --- */
+.diagram-bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
     margin-bottom: 14px;
-    padding-bottom: 10px;
+    padding: 10px 0;
     border-bottom: 1px solid var(--border);
+    /* 그림이 길어도 배율·접기가 손에 남아 있도록 스크롤을 따라다닌다.
+       배경을 깔지 않으면 밑으로 지나가는 그림이 글자에 비친다. */
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--bg);
+}
+
+.zoom-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto; /* 칩이 몇 개든 배율은 오른쪽 끝 */
+}
+
+.zoom-btn {
+    min-width: 26px;
+    padding: 2px 8px;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.zoom-btn:hover {
+    border-color: var(--flow);
+}
+
+.zoom-btn--on {
+    background: var(--flow);
+    border-color: var(--flow);
+    color: #1b2636;
+}
+
+.zoom-value {
+    min-width: 44px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums; /* 배율이 바뀌어도 폭이 안 흔들리게 */
 }
 
 .subflow-bar-label {
