@@ -88,6 +88,20 @@ function shapeOf(groups: (string | undefined)[]): { shape: FlowShape; label: str
     return { shape: "step", label: (step ?? "").trim() };
 }
 
+/**
+ * 라벨을 비워두면 `s1[]`이 되어 mermaid가 파싱에 실패한다. 병합점만 빈 라벨이
+ * 규약이고(`id(( ))`), 나머지는 임시 이름을 채워 그림이 깨지지 않게 한다 —
+ * 편집기는 새 노드를 만든 뒤 라벨 입력칸에 바로 포커스를 준다.
+ */
+const DEFAULT_LABEL: Record<FlowShape, string> = {
+    step: "새 단계",
+    branch: "조건?",
+    merge: "",
+    subflow: "새 하위 흐름",
+    store: "새 저장소",
+    terminal: "끝",
+};
+
 /** 라벨에 mermaid 구분자가 섞이면 따옴표로 감싼다. */
 function labelText(label: string): string {
     const clean = label.replace(/"/g, "'");
@@ -96,7 +110,7 @@ function labelText(label: string): string {
 
 /** 종류·라벨로 mermaid 노드 표현을 만든다. */
 export function nodeExpr(id: string, shape: FlowShape, label: string): string {
-    const t = labelText(label);
+    const t = labelText(label.trim() === "" ? DEFAULT_LABEL[shape] : label);
     switch (shape) {
         case "branch":
             return `${id}{${t}}`;
@@ -327,6 +341,9 @@ export function addNode(
     if (!ctx) return raw;
     const { lines, range, newline } = ctx;
     const expr = nodeExpr(opts.id, opts.shape, opts.label);
+    // 간선을 다시 쓰면 그 줄에 실려 있던 앵커의 정의가 밀려난다
+    // (`begin --> scan[.loadstar 스캔]`의 오른쪽을 새 노드로 바꾸면 scan의 라벨이 사라진다).
+    const defs = collectDefinitions(lines, range);
 
     let firstTouched = -1;
     let lastTouched = -1;
@@ -353,6 +370,7 @@ export function addNode(
     let at = range.end;
     if (firstTouched !== -1) at = opts.position === "after" ? firstTouched : lastTouched + 1;
     lines.splice(at, 0, link);
+    restoreDefinitions(lines, defs);
     return lines.join(newline);
 }
 
@@ -435,7 +453,7 @@ function collectDefinitions(lines: string[], range: { start: number; end: number
  * 줄이 지워지면서 정의를 잃은 노드에게 정의를 돌려준다 — 여전히 그림에
  * 등장하는데 도형이 사라진 노드가 대상이다(등장 자체가 없으면 놔둔다).
  */
-function restoreDefinitions(lines: string[], defs: Map<string, string>, skipId: string): void {
+function restoreDefinitions(lines: string[], defs: Map<string, string>, skipId?: string): void {
     const range = diagramRange(lines);
     if (!range) return;
 

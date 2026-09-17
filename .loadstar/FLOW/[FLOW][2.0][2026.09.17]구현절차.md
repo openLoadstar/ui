@@ -12,5 +12,6 @@ flowchart LR
 ```
 
 ### REFERENCES
+- step1: [WP][2.0][2026.08.13]뷰 전환 아키텍처.md
 
 ### ISSUE

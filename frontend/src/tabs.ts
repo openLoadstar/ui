@@ -500,12 +500,17 @@ export class TabManager {
 
         // 연결(REFERENCES)만 바뀔 때는 그림을 다시 그리지 않는다 — 그림 모양이
         // 그대로라 선택·스크롤을 유지하는 편이 낫다. 구조가 바뀌면 다시 그린다.
+        // 노드를 막 만든 직후 한 번만 라벨 입력칸에 포커스를 준다.
+        let focusLabelOnce = false;
         const refresh = async (redraw: boolean): Promise<void> => {
             if (redraw) await this.drawFlowCanvas(canvas, tab);
             const doc = parseFlow(tab.content);
             markFlowNodes(canvas, doc, tab.selectedFlowNodeId);
+            const focusLabel = focusLabelOnce;
+            focusLabelOnce = false;
             renderFlowPanel(panel, {
                 doc,
+                focusLabel,
                 selected: doc.nodes.find((n) => n.id === tab.selectedFlowNodeId) ?? null,
                 onOpenRef: (filename) => void this.openByFilename(filename),
                 onLink: (id, filename) => {
@@ -533,6 +538,7 @@ export class TabManager {
                     const id = nextNodeId(doc, shape);
                     this.applyFlowEdit(tab, addNode(tab.content, { anchorId, position, id, shape, label }));
                     tab.selectedFlowNodeId = id; // 방금 만든 노드를 이어서 다루게 된다
+                    focusLabelOnce = true; // 임시 라벨이 들어갔을 수 있으니 바로 고쳐 쓰게
                     void refresh(true);
                 },
                 onDelete: (id) => {

@@ -85,6 +85,8 @@ export interface FlowPanelOptions {
     onAdd: (anchorId: string, position: "before" | "after", shape: FlowShape, label: string) => void;
     /** 선택 노드 삭제. */
     onDelete: (id: string) => void;
+    /** 방금 노드를 만든 직후인지 — 임시 라벨을 바로 고쳐 쓰도록 입력칸에 포커스를 준다. */
+    focusLabel?: boolean;
 }
 
 /** 그림 편집 모드의 우측 속성 패널. */
@@ -102,6 +104,11 @@ export function renderFlowPanel(container: HTMLElement, opts: FlowPanelOptions):
     }
 
     renderIdentity(container, opts, selected);
+    if (opts.focusLabel) {
+        const labelInput = container.querySelector<HTMLInputElement>('[data-role="label"]');
+        labelInput?.focus();
+        labelInput?.select();
+    }
     renderStructure(container, opts, selected);
     renderRefSection(container, opts, selected);
     renderOrphanWarning(container, doc);
