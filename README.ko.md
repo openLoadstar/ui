@@ -129,6 +129,7 @@ OTHER는 `[FORMAT][VER][DATE]이름.md` 명명 규칙이 면제되는 유일한 
 loadstar                           GUI 실행
 loadstar create <FORMAT> "이름"     WP/DWP/GROUP/FLOW 파일 생성 (wp|dwp|group|flow)
 loadstar show                      STATUS별 분포 + ISSUE 있는 문서 요약
+loadstar validate [경로]           참조 검사: 깨진 참조, 이름 충돌, FLOW 순환
 loadstar reindex                   .loadstar/.cache/index.db 재생성
 ```
 

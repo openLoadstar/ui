@@ -129,6 +129,7 @@ OTHER is the one FORMAT exempt from the `[FORMAT][VER][DATE]이름.md` naming ru
 loadstar                           launch the GUI
 loadstar create <FORMAT> "name"    create a WP/DWP/GROUP/FLOW file (wp|dwp|group|flow)
 loadstar show                      STATUS distribution + documents that have ISSUEs
+loadstar validate [path]           check references: dangling targets, name clashes, FLOW cycles
 loadstar reindex                   rebuild .loadstar/.cache/index.db
 ```
 

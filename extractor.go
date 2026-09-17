@@ -445,6 +445,22 @@ func Reindex(root string) (ReindexStats, error) {
 		}
 	}
 
+	// FLOW의 `REFERENCES`(노드 → 요소)도 엣지로 남긴다 — "이 WP가 어느 흐름에
+	// 쓰이나"를 역으로 조회할 수 있게(`appendix/FLOW.md`). 그림의 간선 위상은
+	// 여전히 색인하지 않는다(`04.META_EXTRACTION.md` §1).
+	for _, rec := range records {
+		if rec.format != "FLOW" || !rec.isMarkdown {
+			continue
+		}
+		targets := []string{}
+		for _, ref := range parseFlowReferences(rec.content) {
+			targets = append(targets, ref.Target)
+		}
+		if err := addEdges(rec.filename, targets, "FLOW_STEP"); err != nil {
+			return stats, err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return stats, fmt.Errorf("커밋 실패: %w", err)
 	}

@@ -39,7 +39,9 @@ func runCLI(args []string) int {
 		return cmdShow(args[1:])
 	case "reindex":
 		return cmdReindex(args[1:])
-	case "todo", "issues", "validate":
+	case "validate":
+		return cmdValidate(args[1:])
+	case "todo", "issues":
 		fmt.Printf("loadstar %s: 아직 미구현 — %s\n", args[0], notYetImplementedReason[args[0]])
 		return 1
 	case "help", "-h", "--help":
@@ -61,7 +63,7 @@ func printUsage() {
   loadstar show                             STATUS별 분포 + ISSUE 있는 문서 요약
   loadstar todo [all|standby|active|done]   (미구현)
   loadstar issues                           (미구현)
-  loadstar validate                         (미구현)
+  loadstar validate [경로]                  참조 무결성 검사(깨진 참조, 이름 충돌, FLOW 순환)
   loadstar reindex                          구조 추출기 실행 — .loadstar/.cache/index.db 재생성`)
 }
 
