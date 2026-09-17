@@ -4,6 +4,7 @@ import type { ViewMode } from "./viewMode";
 import { groupTreeView } from "./groupTreeView";
 import { dateTreeView } from "./dateTreeView";
 import { searchView, focusSearchInput } from "./searchView";
+import { parseFlow } from "./flowFile";
 import { TabManager } from "./tabs";
 import { initSplitter } from "./splitter";
 import { logInfo, logError } from "./log";
@@ -309,9 +310,33 @@ function startExplorer(projectRoot: string): void {
     }
 
     function deleteElement(node: TreeNode): void {
-        // "삭제"는 실제로 지우지 않고 .del을 덧붙여 목록에서만 숨긴다(deleteDialog.ts 참조) —
-        // 대부분 설계 문서라 진짜 삭제는 탐색기에서 직접 하는 게 안전하다는 판단.
-        // GROUP의 ITEMS는 일부러 안 건드린다 — 탐색기에서 .del만 떼어 되돌리면 소속도 같이 복구되도록.
+        void (async () => {
+            // FLOW는 그림 한 장이 통째로 들어 있는 파일이라, 노드가 남아 있는 동안은
+            // 목록에서 치우는 것조차 막는다(사용자 결정) — 비우고 지우든, 탐색기에서
+            // 직접 옮기든 한 번 더 의식하게 만드는 쪽을 택했다.
+            if (node.format === "FLOW") {
+                try {
+                    const doc = parseFlow(await readProjectFile(node.path));
+                    if (doc.nodes.length > 0) {
+                        alert(
+                            `"${node.name}" 흐름에 노드가 ${doc.nodes.length}개 있어 삭제할 수 없습니다.` +
+                                " 그림 편집에서 노드를 모두 지운 뒤 다시 시도하거나, 탐색기에서 파일을 직접 옮기세요.",
+                        );
+                        return;
+                    }
+                } catch (err) {
+                    // 읽지 못하면 판단할 근거가 없다 — 막지 않고 평소대로 진행한다.
+                    logError(`FLOW 노드 수 확인 실패: ${node.path}`, err);
+                }
+            }
+            openDeleteDialogFor(node);
+        })();
+    }
+
+    /** "삭제"는 실제로 지우지 않고 .del을 덧붙여 목록에서만 숨긴다(deleteDialog.ts 참조) —
+     * 대부분 설계 문서라 진짜 삭제는 탐색기에서 직접 하는 게 안전하다는 판단.
+     * GROUP의 ITEMS는 일부러 안 건드린다 — 탐색기에서 .del만 떼어 되돌리면 소속도 같이 복구되도록. */
+    function openDeleteDialogFor(node: TreeNode): void {
         openDeleteDialog({
             displayName: node.name,
             format: node.format,

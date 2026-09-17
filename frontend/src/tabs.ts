@@ -1,7 +1,15 @@
 // 우측 탭 영역 관리 — 탭 열기/닫기/전환 + 보기·편집 모드 + 저장.
 
 import { parseElementFilename, type ElementFormat, type TreeNode } from "./tree";
-import { readProjectFile, writeProjectFile, readExternalFile, deleteProjectFile, gitFileHistory, gitFileAtCommit } from "./fs";
+import {
+    readProjectFile,
+    writeProjectFile,
+    readExternalFile,
+    deleteProjectFile,
+    createElement,
+    gitFileHistory,
+    gitFileAtCommit,
+} from "./fs";
 import { renderMarkdown, renderPlainText, renderHtmlFile } from "./viewer";
 import { renderGroupInfo } from "./groupInfoView";
 import { validateContent } from "./validate";
@@ -90,8 +98,8 @@ export class TabManager {
     constructor(
         private tabBarEl: HTMLElement,
         private contentEl: HTMLElement,
-        /** pendingCreation 탭을 삭제-닫기했을 때 좌측 트리를 새로고침하라는 신호. */
-        private onFileDeleted?: () => void,
+        /** 파일이 생기거나 사라져 좌측 트리를 새로고침해야 한다는 신호. */
+        private onTreeChanged?: () => void,
     ) {
         // 탭이 넘칠 때 네이티브 스크롤바(항상 탭 줄 바로 아래에 붙어 어색한 위치) 대신
         // 좌우 버튼으로 넘긴다. 트랙패드/휠 스크롤은 계속 되게 두고, 스크롤바만 숨긴다.
@@ -255,7 +263,7 @@ export class TabManager {
             }
             this.removeTab(idx, id);
             await this.renderActive();
-            this.onFileDeleted?.();
+            this.onTreeChanged?.();
             return;
         }
 
@@ -579,6 +587,7 @@ export class TabManager {
                     }
                     void refresh(true);
                 },
+                onExtract: (id) => void this.extractToFlow(tab, id, refresh),
                 onDelete: (id) => {
                     const node = doc.nodes.find((n) => n.id === id);
                     const hasLabeledEdge = doc.edges.some((e) => e.from === id || e.to === id);
@@ -599,6 +608,68 @@ export class TabManager {
             void refresh(false);
         });
         await refresh(true);
+    }
+
+    /**
+     * 선택 노드를 새 FLOW 파일로 빼낸다 — 그 자리는 하위 흐름(`[[ ]]`) 도형이 되고
+     * `REFERENCES`가 새 파일을 가리킨다. 한 단계가 커졌을 때 흐름을 쪼개는 통로다.
+     */
+    private async extractToFlow(tab: Tab, id: string, refresh: (redraw: boolean) => Promise<void>): Promise<void> {
+        const doc = parseFlow(tab.content);
+        const node = doc.nodes.find((n) => n.id === id);
+        if (!node) return;
+        if (node.ref && !confirm(`이 노드는 이미 "${node.ref}"에 연결돼 있습니다. 새 FLOW로 바꿀까요?`)) return;
+
+        const name = prompt("새 FLOW 이름:", node.label || id);
+        if (name === null) return;
+        const trimmed = name.trim();
+        if (!trimmed) return;
+
+        let path: string;
+        try {
+            path = await createElement("FLOW", trimmed);
+        } catch (err) {
+            logError("FLOW 생성 실패", err);
+            alert(`생성 실패: ${err instanceof Error ? err.message : String(err)}`);
+            return;
+        }
+        const filename = path.split("/").pop()!;
+
+        // 스캐폴딩 대신 빼낸 맥락(SUMMARY·PARENT·첫 단계)을 채워 넣는다.
+        const body = [
+            "### IDENTITY",
+            `- SUMMARY: ${node.label || trimmed}`,
+            "",
+            "### CONNECTIONS",
+            `- PARENT: ${fileNameOf(tab.path)}`,
+            "- REFERENCE: []",
+            "",
+            "### DIAGRAM",
+            "```mermaid",
+            "flowchart LR",
+            `    begin((시작)) --> s1[${node.label || trimmed}]`,
+            "    s1 --> done((끝))",
+            "```",
+            "",
+            "### REFERENCES",
+            "",
+            "### ISSUE",
+            "",
+        ].join(NL);
+        try {
+            await writeProjectFile(path, body);
+        } catch (err) {
+            logError(`FLOW 초기 내용 저장 실패: ${path}`, err);
+        }
+
+        // 원래 그림에서는 그 노드를 하위 흐름 도형으로 바꾸고 새 파일을 가리키게 한다.
+        let next = setNodeLabel(tab.content, id, "subflow", node.label);
+        next = setNodeRef(next, id, filename);
+        this.applyFlowEdit(tab, next);
+        await refresh(true);
+        this.onTreeChanged?.();
+        logInfo(`노드를 새 FLOW로 빼냄: ${id} → ${path}`);
+        await this.openByFilename(filename);
     }
 
     /** DIAGRAM의 mermaid만 떼어 캔버스에 다시 그린다. */

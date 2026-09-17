@@ -85,6 +85,8 @@ export interface FlowPanelOptions {
     onAdd: (anchorId: string, position: "before" | "after", shape: FlowShape, label: string) => void;
     /** 선택 노드 삭제. */
     onDelete: (id: string) => void;
+    /** 선택 노드를 새 FLOW 파일로 빼낸다(그 자리는 하위 흐름 도형이 된다). */
+    onExtract: (id: string) => void;
     /** 간선의 조건 라벨 변경(빈 문자열이면 라벨 제거). */
     onEdgeLabel: (line: number, label: string) => void;
     /** 그 간선 하나에만 노드를 끼워 넣는다. */
@@ -204,6 +206,7 @@ function renderStructure(container: HTMLElement, opts: FlowPanelOptions, selecte
             <button class="tb-btn" data-role="add-before">◀ 앞에 추가</button>
             <button class="tb-btn" data-role="add-after">뒤에 추가 ▶</button>
         </div>
+        <button class="tb-btn" data-role="extract">이 노드를 새 FLOW로 빼내기</button>
         <button class="tb-btn tb-btn--danger" data-role="delete">이 노드 삭제</button>
     `;
     container.appendChild(box);
@@ -232,6 +235,7 @@ function renderStructure(container: HTMLElement, opts: FlowPanelOptions, selecte
     };
     box.querySelector('[data-role="add-before"]')!.addEventListener("click", () => add("before"));
     box.querySelector('[data-role="add-after"]')!.addEventListener("click", () => add("after"));
+    box.querySelector('[data-role="extract"]')!.addEventListener("click", () => opts.onExtract(selected.id));
     box.querySelector('[data-role="delete"]')!.addEventListener("click", () => opts.onDelete(selected.id));
 }
 
