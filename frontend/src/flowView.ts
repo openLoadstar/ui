@@ -89,6 +89,10 @@ export interface FlowPanelOptions {
     onAdd: (anchorId: string, mode: "parallel" | "insert", shape: FlowShape, label: string) => void;
     /** 선택 노드를 대상 노드 뒤로 옮긴다. */
     onMove: (id: string, afterId: string) => void;
+    /** 선택 노드에서 기존 노드로 화살표를 하나 잇는다(분기한 갈래를 합류시킬 때). */
+    onConnect: (fromId: string, toId: string) => void;
+    /** 간선의 한쪽 끝을 다른 노드로 바꾼다. */
+    onEdgeEndpoint: (line: number, side: "from" | "to", nodeId: string) => void;
     /** 선택 노드 삭제. */
     onDelete: (id: string) => void;
     /** 간선의 조건 라벨 변경(빈 문자열이면 라벨 제거). */
@@ -213,6 +217,11 @@ function renderStructure(container: HTMLElement, opts: FlowPanelOptions, selecte
             <select class="flow-input" data-role="move-target"></select>
             <button class="tb-btn flow-edge-btn" data-role="move" title="선택한 노드를 이 노드 뒤로 옮긴다">▸</button>
         </div>
+        <div class="flow-field">
+            <span class="flow-field-name">연결</span>
+            <select class="flow-input" data-role="connect-target"></select>
+            <button class="tb-btn flow-edge-btn" data-role="connect" title="이 노드에서 저 노드로 화살표를 잇는다">⇢</button>
+        </div>
         <button class="tb-btn tb-btn--danger" data-role="delete">이 노드 삭제</button>
     `;
     container.appendChild(box);
@@ -220,15 +229,19 @@ function renderStructure(container: HTMLElement, opts: FlowPanelOptions, selecte
     const shapeSel = box.querySelector<HTMLSelectElement>('[data-role="new-shape"]')!;
     const labelInput = box.querySelector<HTMLInputElement>('[data-role="new-label"]')!;
     const moveSel = box.querySelector<HTMLSelectElement>('[data-role="move-target"]')!;
+    const connectSel = box.querySelector<HTMLSelectElement>('[data-role="connect-target"]')!;
     for (const n of opts.doc.nodes) {
         if (n.id === selected.id) continue;
-        const o = document.createElement("option");
-        o.value = n.id;
-        o.textContent = n.label || n.id;
-        moveSel.appendChild(o);
+        for (const sel of [moveSel, connectSel]) {
+            const o = document.createElement("option");
+            o.value = n.id;
+            o.textContent = n.label || n.id;
+            sel.appendChild(o);
+        }
     }
     if (moveSel.options.length === 0) {
         moveSel.innerHTML = `<option value="">옮길 자리 없음</option>`;
+        connectSel.innerHTML = `<option value="">이을 노드 없음</option>`;
     }
 
     if (opts.doc.structureLock) {
@@ -253,16 +266,15 @@ function renderStructure(container: HTMLElement, opts: FlowPanelOptions, selecte
     box.querySelector('[data-role="move"]')!.addEventListener("click", () => {
         if (moveSel.value) opts.onMove(selected.id, moveSel.value);
     });
+    box.querySelector('[data-role="connect"]')!.addEventListener("click", () => {
+        if (connectSel.value) opts.onConnect(selected.id, connectSel.value);
+    });
     box.querySelector('[data-role="delete"]')!.addEventListener("click", () => opts.onDelete(selected.id));
 }
 
 /** 노드에 붙은 화살표들 — 조건 라벨 수정, 그 갈래에만 끼워 넣기, 갈래 추가·삭제. */
 function renderEdges(container: HTMLElement, opts: FlowPanelOptions, selected: FlowNode): void {
     const locked = opts.doc.structureLock !== null;
-    const nameOf = (id: string) => {
-        const n = opts.doc.nodes.find((x) => x.id === id);
-        return n?.label || id;
-    };
     const outgoing = opts.doc.edges.filter((e) => e.from === selected.id);
     const incoming = opts.doc.edges.filter((e) => e.to === selected.id);
 
@@ -271,30 +283,42 @@ function renderEdges(container: HTMLElement, opts: FlowPanelOptions, selected: F
     box.innerHTML = `<div class="flow-panel-label">화살표</div>`;
     container.appendChild(box);
 
-    const row = (line: number, label: string, arrowText: string, peer: string): HTMLElement => {
+    const row = (line: number, label: string, side: "from" | "to", peerId: string): HTMLElement => {
         const el = document.createElement("div");
         el.className = "flow-edge";
         el.innerHTML = `
             <input class="flow-input flow-edge-label" placeholder="조건" spellcheck="false" />
-            <span class="flow-edge-peer"></span>
+            <span class="flow-edge-dir">${side === "to" ? "→" : "←"}</span>
+            <select class="flow-input flow-edge-peer" title="이 화살표의 상대 노드 — 바꾸면 그쪽으로 이어진다"></select>
             <button class="tb-btn flow-edge-btn" data-role="insert" title="이 갈래에만 노드 끼우기">↳</button>
             <button class="tb-btn flow-edge-btn" data-role="drop" title="이 화살표 끊기">×</button>
         `;
         const input = el.querySelector<HTMLInputElement>(".flow-edge-label")!;
         input.value = label;
-        el.querySelector(".flow-edge-peer")!.textContent = `${arrowText} ${peer}`;
-        for (const c of Array.from(el.querySelectorAll<HTMLElement>("input,button"))) {
+
+        // 상대 노드를 바꾸는 것이 곧 "합류" — 갈래의 끝을 기존 노드로 돌려놓는 일이다.
+        const peerSel = el.querySelector<HTMLSelectElement>(".flow-edge-peer")!;
+        for (const n of opts.doc.nodes) {
+            const o = document.createElement("option");
+            o.value = n.id;
+            o.textContent = n.label || n.id;
+            peerSel.appendChild(o);
+        }
+        peerSel.value = peerId;
+
+        for (const c of Array.from(el.querySelectorAll<HTMLElement>("input,select,button"))) {
             (c as HTMLInputElement).disabled = locked;
             if (locked) c.title = opts.doc.structureLock!;
         }
         input.addEventListener("change", () => opts.onEdgeLabel(line, input.value));
+        peerSel.addEventListener("change", () => opts.onEdgeEndpoint(line, side, peerSel.value));
         el.querySelector('[data-role="insert"]')!.addEventListener("click", () => opts.onEdgeInsert(line));
         el.querySelector('[data-role="drop"]')!.addEventListener("click", () => opts.onEdgeDelete(line));
         return el;
     };
 
-    for (const e of outgoing) box.appendChild(row(e.line, edgeLabel(opts, e.line), "→", nameOf(e.to)));
-    for (const e of incoming) box.appendChild(row(e.line, edgeLabel(opts, e.line), "←", nameOf(e.from)));
+    for (const e of outgoing) box.appendChild(row(e.line, edgeLabel(opts, e.line), "to", e.to));
+    for (const e of incoming) box.appendChild(row(e.line, edgeLabel(opts, e.line), "from", e.from));
     if (outgoing.length === 0 && incoming.length === 0) {
         const empty = document.createElement("div");
         empty.className = "flow-panel-empty";

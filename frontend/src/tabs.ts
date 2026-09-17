@@ -27,6 +27,7 @@ import {
     nextNodeId,
     moveNode,
     setEdgeLabel,
+    setEdgeEndpoint,
     insertOnEdge,
     deleteEdge,
     addEdge,
@@ -573,6 +574,14 @@ export class TabManager {
                     );
                     if (!ok) return;
                     this.applyFlowEdit(tab, moveNode(tab.content, id, afterId));
+                    void refresh(true);
+                },
+                onConnect: (fromId, toId) => {
+                    this.applyFlowEdit(tab, addEdge(tab.content, fromId, { existingId: toId }, ""));
+                    void refresh(true);
+                },
+                onEdgeEndpoint: (line, side, nodeId) => {
+                    this.applyFlowEdit(tab, setEdgeEndpoint(tab.content, line, side, nodeId));
                     void refresh(true);
                 },
                 onEdgeLabel: (line, label) => {

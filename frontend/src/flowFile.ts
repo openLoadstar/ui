@@ -732,3 +732,25 @@ export function moveNode(raw: string, id: string, afterId: string): string {
     restoreDefinitions(lines, defs);
     return lines.join(newline);
 }
+
+/**
+ * 간선의 한쪽 끝을 다른 노드로 바꾼다 — 갈래를 기존 노드로 합류시키는 통로다.
+ *
+ * 바뀌는 쪽은 맨 id로만 적는다. 그 자리에 노드 정의(도형·라벨)가 실려 있었다면
+ * 다른 줄로 되돌려 놓는다(`restoreDefinitions`) — 정의가 통째로 사라지지 않게.
+ */
+export function setEdgeEndpoint(raw: string, line: number, side: "from" | "to", nodeId: string): string {
+    const ctx = openEdit(raw);
+    if (!ctx) return raw;
+    const { lines, range, newline } = ctx;
+    if (line < range.start || line >= range.end) return raw;
+    const edge = parseEdgeLine(lines[line]);
+    if (!edge) return raw;
+
+    const defs = collectDefinitions(lines, range);
+    const left = side === "from" ? nodeId : edge.left;
+    const right = side === "to" ? nodeId : edge.right;
+    lines[line] = edge.indent + left + " " + edge.arrow + " " + right;
+    restoreDefinitions(lines, defs);
+    return lines.join(newline);
+}
