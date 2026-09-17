@@ -6,7 +6,6 @@ import {
     writeProjectFile,
     readExternalFile,
     deleteProjectFile,
-    createElement,
     gitFileHistory,
     gitFileAtCommit,
 } from "./fs";
@@ -17,7 +16,6 @@ import { logInfo, logError } from "./log";
 import { FindBar, type FindTarget } from "./find";
 import { fillHistorySelect, WORKING_TREE } from "./historySelect";
 import type { main } from "../wailsjs/go/models";
-import { groupBoundary, groupIntoSubflow, ungroupSubflow } from "./flowGroup";
 import {
     parseFlow,
     setNodeRef,
@@ -30,13 +28,18 @@ import {
     moveNode,
     setEdgeLabel,
     setEdgeEndpoint,
+    groupOf,
+    nextGroupId,
+    wrapInSubgraph,
+    unwrapSubgraph,
+    renameSubgraph,
     insertOnEdge,
     deleteEdge,
     addEdge,
     edgeLabelOf,
 } from "./flowFile";
 import { markFlowNodes, flowNodeIdFromEvent, renderFlowPanel } from "./flowView";
-import { composeFlow } from "./flowCompose";
+import { collapseGroups } from "./flowCollapse";
 
 // FLOW 탭에만 "diagram"(그림 편집)이 추가된다 — 그림에서 노드를 고르고
 // 요소를 연결하는 모드. 원문 편집은 여전히 "edit"(textarea)다.
@@ -76,10 +79,10 @@ interface Tab {
      */
     selectedFlowNodeIds: string[];
     /**
-     * 보기 모드에서 펼쳐 놓은 하위 흐름 노드 id들. 펼침은 화면에서만 합성하고
-     * 파일에는 쓰지 않으므로(flowCompose.ts), 상태도 탭에만 둔다.
+     * 보기 모드에서 접어 놓은 하위 흐름 구역 id들. 원본은 언제나 펼쳐진 형태이고
+     * 접힘은 화면에서만 만들어내므로(flowCollapse.ts), 상태도 탭에만 둔다.
      */
-    expandedFlowNodes: Set<string>;
+    collapsedGroups: Set<string>;
     /**
      * 그림 편집 되돌리기 — 편집 직전 내용을 쌓아둔다. textarea와 달리 구조 편집엔
      * 브라우저 기본 undo가 없어서 직접 들고 있어야 한다.
@@ -186,7 +189,7 @@ export class TabManager {
             viewingHash: null,
             historyContent: "",
             selectedFlowNodeIds: [],
-            expandedFlowNodes: new Set<string>(),
+            collapsedGroups: new Set<string>(),
             flowUndo: [],
         };
         this.tabs.push(tab);
@@ -232,7 +235,7 @@ export class TabManager {
             viewingHash: null,
             historyContent: "",
             selectedFlowNodeIds: [],
-            expandedFlowNodes: new Set<string>(),
+            collapsedGroups: new Set<string>(),
             flowUndo: [],
         };
         this.tabs.push(tab);
@@ -502,36 +505,33 @@ export class TabManager {
 
     /**
      * 보기 모드의 FLOW — 참조가 걸린 노드를 누르면 그 요소를 탭으로 열고,
-     * 하위 흐름은 칩으로 펼쳤다 접었다 한다.
+     * 하위 흐름 구역은 칩으로 접었다 폈다 한다.
      */
     private async renderFlowView(viewerEl: HTMLElement, tab: Tab, raw: string): Promise<void> {
         const doc = parseFlow(raw);
-        const composed = await composeFlow(raw, tab.expandedFlowNodes, (path) => readProjectFile(path));
+        const collapsed = collapseGroups(raw, tab.collapsedGroups);
 
-        // 펼친 게 있으면 원본 자리의 그림만 합성본으로 갈아 끼운다(문서의 나머지는 그대로).
-        if (tab.expandedFlowNodes.size > 0 && composed.text !== "") {
+        // 접은 게 있으면 그림만 접힌 판으로 갈아 끼운다(문서의 나머지는 그대로).
+        if (tab.collapsedGroups.size > 0 && collapsed.text !== "") {
             const old = viewerEl.querySelector("pre.mermaid");
             const holder = old?.parentElement;
             if (holder && old) {
                 // mermaid는 문서에 붙어 있지 않은 요소를 그리지 못한다(치수를 재야 해서).
-                // 그래서 임시 컨테이너를 먼저 끼워 넣고 그린 뒤, 결과만 옮기고 치운다.
                 const staging = document.createElement("div");
                 holder.insertBefore(staging, old);
                 try {
-                    await renderMarkdown(staging, "```mermaid" + NL + composed.text + NL + "```");
+                    await renderMarkdown(staging, "```mermaid" + NL + collapsed.text + NL + "```");
                     const drawn = staging.querySelector("pre.mermaid");
                     if (drawn) holder.replaceChild(drawn, old);
                 } catch (err) {
-                    logError(`하위 흐름 펼침 렌더 실패: ${tab.path}`, err);
+                    logError(`하위 흐름 접기 렌더 실패: ${tab.path}`, err);
                 } finally {
                     staging.remove();
                 }
             }
         }
 
-        if (composed.subflows.size > 0) {
-            this.renderSubflowChips(viewerEl, tab, composed);
-        }
+        if (collapsed.groups.length > 0) this.renderGroupChips(viewerEl, tab, collapsed.groups);
 
         markFlowNodes(viewerEl, doc, new Set());
         viewerEl.addEventListener("click", (e) => {
@@ -541,8 +541,8 @@ export class TabManager {
         });
     }
 
-    /** 문서 맨 위에 붙는 하위 흐름 펼침 칩 — 어떤 노드를 펼칠 수 있는지 드러낸다. */
-    private renderSubflowChips(viewerEl: HTMLElement, tab: Tab, composed: Awaited<ReturnType<typeof composeFlow>>): void {
+    /** 문서 맨 위에 붙는 하위 흐름 접기 칩. */
+    private renderGroupChips(viewerEl: HTMLElement, tab: Tab, groups: { id: string; title: string }[]): void {
         const bar = document.createElement("div");
         bar.className = "subflow-bar";
         const label = document.createElement("span");
@@ -550,28 +550,22 @@ export class TabManager {
         label.textContent = "하위 흐름";
         bar.appendChild(label);
 
-        const doc = parseFlow(tab.content);
-        for (const [id] of composed.subflows) {
-            const expanded = tab.expandedFlowNodes.has(id);
+        for (const group of groups) {
+            const isCollapsed = tab.collapsedGroups.has(group.id);
             const chip = document.createElement("button");
-            chip.className = "subflow-chip" + (expanded ? " subflow-chip--on" : "");
-            chip.textContent = `${expanded ? "⊖" : "⊕"} ${doc.nodes.find((n) => n.id === id)?.label || id}`;
+            chip.className = "subflow-chip" + (isCollapsed ? " subflow-chip--on" : "");
+            chip.textContent = `${isCollapsed ? "⊕" : "⊖"} ${group.title}`;
+            chip.title = isCollapsed ? "펼치기" : "접기";
             chip.addEventListener("click", () => {
-                if (expanded) tab.expandedFlowNodes.delete(id);
-                else tab.expandedFlowNodes.add(id);
+                if (isCollapsed) tab.collapsedGroups.delete(group.id);
+                else tab.collapsedGroups.add(group.id);
                 void this.renderActive();
             });
             bar.appendChild(chip);
         }
-
-        for (const problem of composed.problems) {
-            const note = document.createElement("span");
-            note.className = "subflow-problem";
-            note.textContent = `⚠️ ${problem}`;
-            bar.appendChild(note);
-        }
         viewerEl.prepend(bar);
     }
+
 
     /** 그림 편집 모드 — 왼쪽은 그림, 오른쪽은 선택 노드 속성 패널. */
     private async renderFlowEditor(body: HTMLElement, tab: Tab): Promise<void> {
@@ -607,7 +601,7 @@ export class TabManager {
                 edgeLabels,
                 selectedNodes,
                 selected: selectedNodes.length === 1 ? selectedNodes[0] : null,
-                groupProblem: groupBoundary(doc, selectedIds).problem,
+                group: selectedNodes.length === 1 ? groupOf(doc, selectedNodes[0].id) : null,
                 onOpenRef: (filename) => void this.openByFilename(filename),
                 onLink: (id, filename) => {
                     let next = setNodeRef(tab.content, id, filename);
@@ -694,8 +688,9 @@ export class TabManager {
                     this.applyFlowEdit(tab, deleteEdge(tab.content, line));
                     void refresh(true);
                 },
-                onGroup: (name) => void this.groupSelection(tab, name, refresh),
-                onUngroup: (id) => void this.ungroupNode(tab, id, refresh),
+                onGroup: (name) => this.groupSelection(tab, name, refresh),
+                onUngroup: (groupId) => this.ungroupSelection(tab, groupId, refresh),
+                onRenameGroup: (groupId, title) => this.renameGroup(tab, groupId, title, refresh),
                 onDelete: (id) => {
                     const node = doc.nodes.find((n) => n.id === id);
                     const hasLabeledEdge = doc.edges.some((e) => e.from === id || e.to === id);
@@ -740,83 +735,48 @@ export class TabManager {
         }
     }
 
-    /**
-     * 고른 노드들을 새 FLOW로 떼어낸다 — 파일을 만들고, 부모에는 `[[ ]]` 한 칸만 남긴다.
-     * 이름을 비워두면 만들지 않는다(파일명이 되는 값이라 물어보는 편이 낫다).
-     */
-    private async groupSelection(tab: Tab, name: string, refresh: (redraw: boolean) => Promise<void>): Promise<void> {
+    /** 고른 노드들을 `subgraph` 구역으로 감싼다. */
+    private groupSelection(tab: Tab, name: string, refresh: (redraw: boolean) => Promise<void>): void {
         const ids = new Set(tab.selectedFlowNodeIds);
+        if (ids.size === 0) return;
         const doc = parseFlow(tab.content);
-        const boundary = groupBoundary(doc, ids);
-        if (boundary.problem) {
-            alert(boundary.problem);
+        // 1단계만 지원한다 — 이미 구역에 든 노드를 또 감싸면 중첩이 된다.
+        const already = [...ids].find((id) => groupOf(doc, id) !== null);
+        if (already) {
+            const label = doc.nodes.find((n) => n.id === already)?.label || already;
+            alert(`"${label}"는 이미 하위 흐름 안에 있습니다. 중첩은 지원하지 않습니다.`);
             return;
         }
-        const trimmed = name.trim() || prompt("새 하위 흐름 이름:")?.trim() || "";
-        if (!trimmed) return;
+        const title = name.trim() || prompt("하위 흐름 이름:")?.trim() || "";
+        if (!title) return;
 
-        let path: string;
-        try {
-            path = await createElement("FLOW", trimmed);
-        } catch (err) {
-            logError("하위 흐름 생성 실패", err);
-            alert(`생성 실패: ${err instanceof Error ? err.message : String(err)}`);
-            return;
-        }
-        const childFilename = path.split("/").pop()!;
-        const newId = nextNodeId(doc, "subflow");
-        const result = groupIntoSubflow(tab.content, ids, {
-            newId,
-            name: trimmed,
-            childFilename,
-            parentFilename: fileNameOf(tab.path),
-        });
-        if (!result) {
-            alert("묶는 중 문제가 생겨 중단했습니다. 그림을 확인해 주세요.");
-            return;
-        }
-
-        try {
-            await writeProjectFile(path, result.child);
-        } catch (err) {
-            logError(`하위 흐름 저장 실패: ${path}`, err);
-            alert("하위 흐름 파일을 저장하지 못했습니다.");
-            return;
-        }
-        this.applyFlowEdit(tab, result.parent);
-        tab.selectedFlowNodeIds = [newId];
-        await refresh(true);
-        this.onTreeChanged?.();
-        logInfo(`하위 흐름으로 묶음: ${[...ids].join(", ")} → ${path}`);
-    }
-
-    /** 하위 흐름을 부모 안으로 도로 펼친다. 자식 파일은 지우지 않고 연결만 끊는다. */
-    private async ungroupNode(tab: Tab, id: string, refresh: (redraw: boolean) => Promise<void>): Promise<void> {
-        const doc = parseFlow(tab.content);
-        const ref = doc.nodes.find((n) => n.id === id)?.ref;
-        if (!ref) return;
-        if (!confirm(`"${ref}"의 내용을 이 그림 안으로 펼쳐 넣습니다. 자식 파일은 지우지 않고 연결만 끊습니다. 계속할까요?`)) {
-            return;
-        }
-
-        let childRaw: string;
-        try {
-            childRaw = await readProjectFile(`.loadstar/FLOW/${ref}`);
-        } catch (err) {
-            logError(`하위 흐름 읽기 실패: ${ref}`, err);
-            alert("하위 흐름 파일을 읽지 못했습니다.");
-            return;
-        }
-        const next = ungroupSubflow(tab.content, id, childRaw);
+        const next = wrapInSubgraph(tab.content, ids, { id: nextGroupId(doc), title });
         if (!next) {
-            alert("하위 흐름의 시작이나 끝이 하나로 정해지지 않아 펼칠 수 없습니다.");
+            alert("묶는 중 문제가 생겨 중단했습니다.");
             return;
         }
         this.applyFlowEdit(tab, next);
-        tab.selectedFlowNodeIds = [];
-        await refresh(true);
-        logInfo(`하위 흐름 풀기: ${id} (${ref})`);
+        void refresh(true);
+        logInfo(`하위 흐름으로 묶음: ${[...ids].join(", ")} (${title})`);
     }
+
+    /** 구역을 해제한다 — 안쪽 노드는 그대로 남고 경계만 사라진다. */
+    private ungroupSelection(tab: Tab, groupId: string, refresh: (redraw: boolean) => Promise<void>): void {
+        const next = unwrapSubgraph(tab.content, groupId);
+        if (!next) return;
+        tab.collapsedGroups.delete(groupId);
+        this.applyFlowEdit(tab, next);
+        void refresh(true);
+    }
+
+    /** 구역 제목을 바꾼다. */
+    private renameGroup(tab: Tab, groupId: string, title: string, refresh: (redraw: boolean) => Promise<void>): void {
+        const next = renameSubgraph(tab.content, groupId, title);
+        if (!next) return;
+        this.applyFlowEdit(tab, next);
+        void refresh(true);
+    }
+
 
     /** 그림 편집 한 번 = 되돌리기 한 칸. 내용이 그대로면 아무 일도 하지 않는다. */
     private applyFlowEdit(tab: Tab, next: string): void {

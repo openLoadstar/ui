@@ -24,6 +24,21 @@ export interface FlowNode {
     ref: string | null;
 }
 
+/**
+ * 그림 안의 하위 흐름 — mermaid `subgraph … end`로 묶인 구역.
+ *
+ * 별도 파일이 아니라 **같은 그림의 한 영역**이다. 안쪽 노드는 평범한 노드와
+ * 똑같이 편집되고, 접기는 화면에서만 일어난다.
+ */
+export interface FlowGroup {
+    id: string;
+    title: string;
+    nodeIds: string[];
+    /** `subgraph` 줄과 `end` 줄의 위치(문서 전체 기준). */
+    open: number;
+    close: number;
+}
+
 export interface FlowEdge {
     from: string;
     to: string;
@@ -34,6 +49,7 @@ export interface FlowEdge {
 export interface FlowDoc {
     nodes: FlowNode[];
     edges: FlowEdge[];
+    groups: FlowGroup[];
     /** `REFERENCES`에는 있는데 그림에 그 id가 없는 항목 — 사용자에게 알려줄 불일치. */
     orphanRefs: { id: string; ref: string }[];
     /** `### DIAGRAM`의 mermaid 코드블록을 찾지 못한 경우의 사유. */
@@ -64,7 +80,10 @@ const NODE_DEF_PARTS = new RegExp(String.raw`^([A-Za-z_]\w*)(${SHAPE_PART})?$`);
 const NODE_DEF_SCAN = /([A-Za-z_][\w]*)(?:\(\((.*?)\)\)|\[\[(.*?)\]\]|\[\((.*?)\)\]|\{(.*?)\}|\[(.*?)\])/g;
 
 const IGNORED_LINE = /^\s*(%%|flowchart|graph|direction|style|classDef|class|click|linkStyle)\b/;
-const BLOCKING_LINE = /^\s*(subgraph|end)\b/;
+// 하위 흐름 구역: `subgraph <id>[제목]` … `end`. 편집기는 언제나 이 형태로 쓴다.
+const SUBGRAPH_OPEN = new RegExp(String.raw`^(\s*)subgraph\s+([A-Za-z_]\w*)\[(.*?)\]\s*$`);
+const SUBGRAPH_ANY = /^\s*subgraph\b/;
+const SUBGRAPH_END = /^\s*end\s*$/;
 
 /** 편집기가 새로 만드는 노드 id의 접두어 — 종류를 보면 알아보게. */
 const ID_PREFIX: Record<FlowShape, string> = {
@@ -198,6 +217,7 @@ export function parseFlow(raw: string): FlowDoc {
         return {
             nodes: [],
             edges: [],
+            groups: [],
             orphanRefs: [...refs].map(([id, ref]) => ({ id, ref })),
             problem: "DIAGRAM 섹션에서 mermaid 코드블록을 찾지 못했습니다.",
             structureLock: "그림을 찾지 못했습니다.",
@@ -206,12 +226,16 @@ export function parseFlow(raw: string): FlowDoc {
 
     const byId = new Map<string, FlowNode>();
     const edges: FlowEdge[] = [];
+    const groups: FlowGroup[] = [];
+    let open: FlowGroup | null = null; // 지금 들어가 있는 구역(1단계만 지원)
     let structureLock: string | null = null;
 
     const addFromExpr = (expr: string) => {
         const parts = NODE_DEF_PARTS.exec(expr);
         if (!parts) return;
         const id = parts[1];
+        // 구역 안에서 등장한 노드가 그 구역의 멤버다(mermaid도 subgraph 선언을 따른다).
+        if (open && !open.nodeIds.includes(id)) open.nodeIds.push(id);
         if (parts[2] === undefined) {
             // 도형 없이 id만 등장 — mermaid는 기본 사각형으로 그린다.
             if (!byId.has(id)) byId.set(id, { id, label: id, shape: "step", ref: refs.get(id) ?? null });
@@ -229,8 +253,27 @@ export function parseFlow(raw: string): FlowDoc {
     for (let i = range.start; i < range.end; i++) {
         const line = lines[i];
         if (line.trim() === "" || IGNORED_LINE.test(line)) continue;
-        if (BLOCKING_LINE.test(line)) {
-            structureLock ??= "subgraph가 있는 그림은 구조 편집을 지원하지 않습니다.";
+
+        if (SUBGRAPH_ANY.test(line)) {
+            const m = SUBGRAPH_OPEN.exec(line);
+            if (!m) {
+                structureLock ??= `편집기가 다루는 형태가 아닌 subgraph가 있습니다: "${line.trim()}"`;
+                continue;
+            }
+            if (open) {
+                // 중첩은 지원하지 않는다 — 접기 상태와 경계 계산이 금방 복잡해진다.
+                structureLock ??= "중첩된 subgraph가 있어 구조 편집을 지원하지 않습니다.";
+                continue;
+            }
+            open = { id: m[2], title: m[3], nodeIds: [], open: i, close: i };
+            continue;
+        }
+        if (SUBGRAPH_END.test(line)) {
+            if (open) {
+                open.close = i;
+                groups.push(open);
+                open = null;
+            }
             continue;
         }
 
@@ -258,8 +301,10 @@ export function parseFlow(raw: string): FlowDoc {
         }
     }
 
+    if (open) structureLock ??= "`end`가 없는 subgraph가 있습니다.";
+
     const orphanRefs = [...refs].filter(([id]) => !byId.has(id)).map(([id, ref]) => ({ id, ref }));
-    return { nodes: [...byId.values()], edges, orphanRefs, problem: null, structureLock };
+    return { nodes: [...byId.values()], edges, groups, orphanRefs, problem: null, structureLock };
 }
 
 /**
@@ -756,5 +801,132 @@ export function setEdgeEndpoint(raw: string, line: number, side: "from" | "to", 
     const right = side === "to" ? nodeId : edge.right;
     lines[line] = edge.indent + left + " " + edge.arrow + " " + right;
     restoreDefinitions(lines, defs);
+    return lines.join(newline);
+}
+
+// ---- 하위 흐름 구역(subgraph) 편집 ---------------------------------------
+//
+// 하위 흐름은 별도 파일이 아니라 같은 그림의 한 구역이다. 그래서 묶기·풀기는
+// `subgraph`/`end` 두 줄을 넣고 빼는 일이고, 안쪽 노드는 평범한 노드 그대로다.
+
+/** 그 노드가 속한 구역. 없으면 null. */
+export function groupOf(doc: FlowDoc, nodeId: string): FlowGroup | null {
+    return doc.groups.find((g) => g.nodeIds.includes(nodeId)) ?? null;
+}
+
+/** 쓰이지 않은 구역 id를 만든다. */
+export function nextGroupId(doc: FlowDoc): string {
+    const used = new Set([...doc.groups.map((g) => g.id), ...doc.nodes.map((n) => n.id)]);
+    for (let i = 1; ; i++) {
+        const id = `g${i}`;
+        if (!used.has(id)) return id;
+    }
+}
+
+/**
+ * 고른 노드들을 `subgraph … end`로 감싼다.
+ *
+ * 안쪽 간선과 노드 정의를 블록으로 옮기고, 경계를 넘는 간선은 있던 자리에 둔다.
+ * 노드가 어느 구역에 속하는지는 **블록 안에 그 노드가 나오는지**로 정해지므로,
+ * 블록에 정의가 없는 노드는 홀로 선 정의 줄을 하나 넣어준다.
+ */
+export function wrapInSubgraph(
+    raw: string,
+    ids: ReadonlySet<string>,
+    opts: { id: string; title: string },
+): string | null {
+    if (ids.size === 0) return null;
+    const ctx = openEdit(raw);
+    if (!ctx) return null;
+    const { lines, range, newline } = ctx;
+    const defs = collectDefinitions(lines, range);
+    const indent = indentOf(lines, range);
+
+    const moved: string[] = [];
+    const removeAt: number[] = [];
+    for (let i = range.start; i < range.end; i++) {
+        const edge = parseEdgeLine(lines[i]);
+        if (edge) {
+            if (ids.has(idOf(edge.left)) && ids.has(idOf(edge.right))) {
+                moved.push(lines[i].trim());
+                removeAt.push(i);
+            }
+            continue;
+        }
+        const nodeOnly = NODE_LINE.exec(lines[i]);
+        if (nodeOnly && ids.has(idOf(nodeOnly[2]))) {
+            moved.push(lines[i].trim());
+            removeAt.push(i);
+        }
+    }
+
+    // 블록 안에 정의가 없는 노드는 정의 줄을 따로 넣어야 그 구역 소속이 된다.
+    // 읽는 순서를 따라 정의를 앞에 세운다.
+    const insideText = moved.join(newline);
+    const declarations: string[] = [];
+    for (const id of ids) {
+        const def = defs.get(id) ?? id;
+        const mentioned = new RegExp(`(^|[^A-Za-z0-9_])${id}([^A-Za-z0-9_]|$)`).test(insideText);
+        const definedInside = insideText.includes(def) && def !== id;
+        if (!mentioned || !definedInside) declarations.push(def);
+    }
+    moved.unshift(...declarations);
+
+    const at = removeAt.length > 0 ? removeAt[0] : range.end;
+    for (const i of [...removeAt].reverse()) lines.splice(i, 1);
+    lines.splice(
+        at,
+        0,
+        `${indent}subgraph ${opts.id}[${opts.title}]`,
+        ...moved.map((l) => `${indent}    ${l}`),
+        `${indent}end`,
+    );
+
+    // 블록 밖에 남은 정의는 맨 id로 줄인다 — 정의가 두 곳에 있으면 소속이 흔들린다.
+    const after = diagramRange(lines);
+    if (after) {
+        const blockStart = at;
+        const blockEnd = at + moved.length + 1;
+        for (let i = after.start; i < after.end; i++) {
+            if (i >= blockStart && i <= blockEnd) continue;
+            const edge = parseEdgeLine(lines[i]);
+            if (!edge) continue;
+            const left = ids.has(idOf(edge.left)) ? idOf(edge.left) : edge.left;
+            const right = ids.has(idOf(edge.right)) ? idOf(edge.right) : edge.right;
+            if (left !== edge.left || right !== edge.right) {
+                lines[i] = `${edge.indent}${left} ${edge.arrow} ${right}`;
+            }
+        }
+    }
+    return lines.join(newline);
+}
+
+/** 구역을 해제한다 — `subgraph`/`end` 두 줄만 빼고 안쪽 노드는 그대로 둔다. */
+export function unwrapSubgraph(raw: string, groupId: string): string | null {
+    const ctx = openEdit(raw);
+    if (!ctx) return null;
+    const { lines, newline } = ctx;
+    const group = parseFlow(raw).groups.find((g) => g.id === groupId);
+    if (!group) return null;
+
+    const inner = indentOf(lines, ctx.range);
+    // 안쪽 줄의 들여쓰기를 되돌린다 — 어차피 그 줄들은 이미 바뀌는 참이고,
+    // 한 단계 들어간 채로 남으면 구역이 아직 있는 것처럼 보인다.
+    for (let i = group.open + 1; i < group.close; i++) lines[i] = inner + lines[i].trim();
+    lines.splice(group.close, 1);
+    lines.splice(group.open, 1);
+    return lines.join(newline);
+}
+
+/** 구역 제목을 바꾼다. */
+export function renameSubgraph(raw: string, groupId: string, title: string): string | null {
+    const ctx = openEdit(raw);
+    if (!ctx) return null;
+    const { lines, newline } = ctx;
+    const group = parseFlow(raw).groups.find((g) => g.id === groupId);
+    if (!group) return null;
+    const m = SUBGRAPH_OPEN.exec(lines[group.open]);
+    if (!m) return null;
+    lines[group.open] = `${m[1]}subgraph ${m[2]}[${title.trim() || m[2]}]`;
     return lines.join(newline);
 }

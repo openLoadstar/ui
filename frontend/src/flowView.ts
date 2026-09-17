@@ -7,7 +7,7 @@
 
 import { parseElementFilename, formatIcon, type ElementFormat } from "./tree";
 import { listFormatFiles } from "./fs";
-import type { FlowDoc, FlowNode, FlowShape } from "./flowFile";
+import type { FlowDoc, FlowGroup, FlowNode, FlowShape } from "./flowFile";
 
 const SVG_NODE_ID = /-flowchart-(.+)-\d+$/;
 
@@ -105,12 +105,14 @@ export interface FlowPanelOptions {
     onEdgeDelete: (line: number) => void;
     /** 간선별 조건 라벨(줄 번호 → 라벨) — 원문에서 읽어 넘긴다. */
     edgeLabels?: Map<number, string>;
-    /** 묶을 수 없는 이유(`groupBoundary`). null이면 묶어도 된다. */
-    groupProblem: string | null;
-    /** 고른 노드들을 새 하위 흐름으로 묶는다. */
+    /** 선택 노드가 속한 하위 흐름 구역(하나만 골랐을 때). */
+    group: FlowGroup | null;
+    /** 고른 노드들을 `subgraph` 구역으로 감싼다. */
     onGroup: (name: string) => void;
-    /** 하위 흐름 노드를 부모 안으로 도로 펼친다. */
-    onUngroup: (id: string) => void;
+    /** 구역을 해제한다. */
+    onUngroup: (groupId: string) => void;
+    /** 구역 제목을 바꾼다. */
+    onRenameGroup: (groupId: string, title: string) => void;
     /** 방금 노드를 만든 직후인지 — 임시 라벨을 바로 고쳐 쓰도록 입력칸에 포커스를 준다. */
     focusLabel?: boolean;
 }
@@ -299,27 +301,34 @@ function renderStructure(container: HTMLElement, opts: FlowPanelOptions, selecte
 /**
  * 하위 흐름 묶기·풀기.
  *
- * 묶기는 고른 노드들을 새 FLOW로 떼어내고, 풀기는 그 반대다. 둘을 짝으로 두는
- * 이유: 되돌릴 수 없는 구조 변경은 쓰기 무섭다.
+ * 하위 흐름은 별도 파일이 아니라 같은 그림의 `subgraph` 구역이다. 그래서 묶기는
+ * 경계 두 줄을 넣는 일이고, 안쪽 노드는 평범한 노드 그대로 편집된다.
  */
 function renderSubflowSection(container: HTMLElement, opts: FlowPanelOptions): void {
     const locked = opts.doc.structureLock !== null;
-    const one = opts.selectedNodes.length === 1 ? opts.selectedNodes[0] : null;
-    const isSubflow = one?.ref != null && one.ref.startsWith("[FLOW]");
-
     const box = document.createElement("div");
     box.className = "flow-panel-section";
     box.innerHTML = `<div class="flow-panel-label">하위 흐름</div>`;
     container.appendChild(box);
 
-    if (isSubflow && one) {
-        const btn = document.createElement("button");
-        btn.className = "tb-btn";
-        btn.textContent = "↧ 하위 흐름 풀기";
-        btn.title = "이 하위 흐름의 내용을 여기로 펼쳐 넣는다(자식 파일은 남는다)";
-        btn.disabled = locked;
-        btn.addEventListener("click", () => opts.onUngroup(one.id));
-        box.appendChild(btn);
+    // 이미 구역에 든 노드를 골랐으면 그 구역을 다룬다(이름 바꾸기·해제).
+    const group = opts.group;
+    if (group) {
+        const row = document.createElement("div");
+        row.className = "flow-field";
+        row.innerHTML = `
+            <input class="flow-input" data-role="group-title" spellcheck="false" />
+            <button class="tb-btn flow-edge-btn" data-role="ungroup" title="구역만 없앤다 — 안쪽 노드는 그대로 남는다">⊟</button>
+        `;
+        box.appendChild(row);
+        const titleInput = row.querySelector<HTMLInputElement>('[data-role="group-title"]')!;
+        titleInput.value = group.title;
+        for (const el of Array.from(row.querySelectorAll<HTMLElement>("input,button"))) {
+            (el as HTMLInputElement).disabled = locked;
+            if (locked) el.title = opts.doc.structureLock!;
+        }
+        titleInput.addEventListener("change", () => opts.onRenameGroup(group.id, titleInput.value));
+        row.querySelector('[data-role="ungroup"]')!.addEventListener("click", () => opts.onUngroup(group.id));
         return;
     }
 
@@ -333,16 +342,9 @@ function renderSubflowSection(container: HTMLElement, opts: FlowPanelOptions): v
 
     const nameInput = form.querySelector<HTMLInputElement>('[data-role="group-name"]')!;
     const button = form.querySelector<HTMLButtonElement>('[data-role="group"]')!;
-    const problem = opts.groupProblem;
     for (const el of [nameInput, button]) {
-        el.disabled = locked || problem !== null;
+        el.disabled = locked;
         if (locked) el.title = opts.doc.structureLock!;
-    }
-    if (problem) {
-        const note = document.createElement("div");
-        note.className = "flow-panel-lock";
-        note.textContent = problem;
-        box.appendChild(note);
     }
     button.addEventListener("click", () => opts.onGroup(nameInput.value.trim()));
 }
