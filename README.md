@@ -61,9 +61,31 @@ OTHER files are handled by type: `.csv` / `.json` / `.txt` are shown verbatim so
 
 ### Flow diagrams — the `FLOW` element
 
-A `FLOW` element describes a process as one mermaid diagram, with each node optionally pointing at the WP / DWP / other FLOW it stands for. The whole project's flow lives in one file; a step that needs unpacking becomes its own FLOW and is drawn as a subroutine box — the same shape a function call has, which is the point.
+A `FLOW` element describes a process as one mermaid diagram. What sits in `### DIAGRAM` is plain mermaid, so it renders anywhere markdown does (GitHub included), and what each node stands for — a WP, a DWP, another FLOW — is written in `### REFERENCES`, outside the code block, where the extractor and the validator can still see it.
 
-The diagram itself is plain mermaid inside `### DIAGRAM`, so it renders anywhere markdown does (GitHub included). The node → element links sit in `### REFERENCES`, outside the code block, so the extractor and the validator can still see the relationships. In the viewer, a node that points at something is outlined and clicking it opens that element; **✎ 그림 편집 (Edit diagram)** turns the same picture into an editor — select a node to rename it, change its label or kind, insert a step before or after it, delete it (the flow is reconnected through the gap), or attach an element, all without typing mermaid. The arrows on a node are listed too, so a branch can get a third path, one path can take an extra step while the others stay put, and a condition label is editable in place. Adding is split by what it does rather than which direction it points: **병렬 추가** gives a node one more path, **삽입 추가** pushes the existing path behind a new step, and a node can be moved to sit after any other. Paths merge by pointing an arrow's far end at an existing node, or by drawing a new one with 연결. Every change rewrites only the lines it has to, `Ctrl+Z` steps back through them, and a diagram using syntax the editor cannot safely rewrite locks structural editing rather than mangling it. Ctrl-click picks several nodes, and picking them is how a subflow gets made: they are wrapped in a `subgraph` — a named region of the same diagram, not a second file — which the chips above the document fold into a single box and unfold again. Folding is a way of looking; the file always holds the unfolded form. Shapes carry meaning: `[step]`, `{branch}`, `(( ))` merge, `[[subflow]]`, `[(store)]`, `((terminal))` — see [appendix/FLOW.md](https://github.com/openLoadstar/spec/blob/main/SPEC%202.0/appendix/FLOW.md).
+Shapes carry meaning: `[step]`, `{branch}`, `(( ))` merge, `[[subflow]]`, `[(store)]`, `((terminal))`.
+
+#### Using it
+
+| To do this | Do that |
+|:--|:--|
+| Create a flow | **+ FLOW** in the toolbar |
+| Switch modes | `👁 보기` · `✎ 그림 편집` · `</> 텍스트 편집` on a FLOW tab |
+| Select a node | Click it — the side panel shows its id, kind and label |
+| Add a step | **⑂ 병렬 추가** (one more path) · **↳ 삽입 추가** (push the existing path behind a new step) |
+| Add to one path only | **↳** on that arrow's row — the condition stays on the branch |
+| Name a condition | The input on the arrow's row |
+| Merge paths | Change an arrow's far end in its dropdown, or draw a new arrow with **연결** |
+| Move a node | **이동** — put the selected node after another |
+| Link an element | Pick a WP/DWP/FLOW from the list at the bottom of the panel (picking a FLOW also gives the node the subflow shape) |
+| Make a subflow | **Ctrl-click** several nodes, then **⊞** — they become a `subgraph` region of the same diagram |
+| Fold / unfold | The chips above the document in view mode (`⊖` open / `⊕` folded). The file does not change |
+| Rename or dissolve a region | Select a node inside it for the title field and **⊟** |
+| Undo | `Ctrl+Z` |
+
+In view mode a node that points at something is outlined, and clicking it opens that element.
+
+Every edit rewrites only the lines it has to, so comments and hand-written notation survive. A diagram using syntax the editor cannot safely rewrite — a chained `a --> b --> c`, a nested `subgraph` — locks structural editing rather than mangling it, while drawing and element linking carry on. The full rules are in [appendix/FLOW.md](https://github.com/openLoadstar/spec/blob/main/SPEC%202.0/appendix/FLOW.md).
 
 ### Git history per file
 
