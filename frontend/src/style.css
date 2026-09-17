@@ -1374,6 +1374,49 @@ mark.find-hit--current {
     color: #fff;
 }
 
+/* --- 하위 흐름 펼침 칩 --- */
+.subflow-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+.subflow-bar-label {
+    color: var(--text-dim);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.subflow-chip {
+    padding: 2px 10px;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.subflow-chip:hover {
+    border-color: var(--flow);
+}
+
+.subflow-chip--on {
+    background: var(--flow);
+    border-color: var(--flow);
+    color: #1b2636;
+}
+
+.subflow-problem {
+    color: var(--danger);
+    font-size: 11px;
+}
+
 /* --- 버전(git 이력) 콤보박스 (`[WP][2.0][2026.09.10]파일 이력 뷰어.md`) --- */
 .history-select {
     max-width: 300px;

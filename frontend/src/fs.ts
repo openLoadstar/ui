@@ -31,6 +31,8 @@ import type { main } from "../wailsjs/go/models";
 // 개발 중 브라우저 미리보기 전용 — 실제 WP 파일을 그대로 읽어와 목업으로 쓴다(내용 중복 없음).
 import structuralExtractorRaw from "../../.loadstar/WP/[WP][2.0][2026.07.27]구조 추출기.md?raw";
 import indexPipelineFlowRaw from "../../.loadstar/FLOW/[FLOW][2.0][2026.09.17]색인 파이프라인.md?raw";
+// 하위 흐름 펼침(flowCompose.ts)을 미리보기에서도 확인할 수 있도록 자식 흐름도 같이 싣는다.
+import elementParsingFlowRaw from "../../.loadstar/FLOW/[FLOW][2.0][2026.09.17]요소 파싱 상세.md?raw";
 
 function isWailsRuntimeAvailable(): boolean {
     return typeof window !== "undefined" && !!(window as unknown as { go?: unknown }).go;
@@ -39,6 +41,7 @@ function isWailsRuntimeAvailable(): boolean {
 const mockStore: Record<string, string> = {
     ".loadstar/WP/[WP][2.0][2026.07.27]구조 추출기.md": structuralExtractorRaw,
     ".loadstar/FLOW/[FLOW][2.0][2026.09.17]색인 파이프라인.md": indexPipelineFlowRaw,
+    ".loadstar/FLOW/[FLOW][2.0][2026.09.17]요소 파싱 상세.md": elementParsingFlowRaw,
     "__default__": [
         "# 브라우저 미리보기 모드",
         "",
@@ -159,7 +162,10 @@ const mockDirListing: Record<string, string[]> = {
     DWP: [],
     GROUP: [],
     OTHER: [],
-    FLOW: [".loadstar/FLOW/[FLOW][2.0][2026.09.17]색인 파이프라인.md"],
+    FLOW: [
+        ".loadstar/FLOW/[FLOW][2.0][2026.09.17]색인 파이프라인.md",
+        ".loadstar/FLOW/[FLOW][2.0][2026.09.17]요소 파싱 상세.md",
+    ],
 };
 
 /**

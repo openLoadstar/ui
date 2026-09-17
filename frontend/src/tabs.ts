@@ -34,6 +34,7 @@ import {
     edgeLabelOf,
 } from "./flowFile";
 import { markFlowNodes, flowNodeIdFromEvent, renderFlowPanel } from "./flowView";
+import { composeFlow } from "./flowCompose";
 
 // FLOW 탭에만 "diagram"(그림 편집)이 추가된다 — 그림에서 노드를 고르고
 // 요소를 연결하는 모드. 원문 편집은 여전히 "edit"(textarea)다.
@@ -69,6 +70,11 @@ interface Tab {
     historyContent: string;
     /** FLOW 탭의 그림 편집 모드에서 지금 선택된 노드 id. */
     selectedFlowNodeId: string | null;
+    /**
+     * 보기 모드에서 펼쳐 놓은 하위 흐름 노드 id들. 펼침은 화면에서만 합성하고
+     * 파일에는 쓰지 않으므로(flowCompose.ts), 상태도 탭에만 둔다.
+     */
+    expandedFlowNodes: Set<string>;
     /**
      * 그림 편집 되돌리기 — 편집 직전 내용을 쌓아둔다. textarea와 달리 구조 편집엔
      * 브라우저 기본 undo가 없어서 직접 들고 있어야 한다.
@@ -175,6 +181,7 @@ export class TabManager {
             viewingHash: null,
             historyContent: "",
             selectedFlowNodeId: null,
+            expandedFlowNodes: new Set<string>(),
             flowUndo: [],
         };
         this.tabs.push(tab);
@@ -220,6 +227,7 @@ export class TabManager {
             viewingHash: null,
             historyContent: "",
             selectedFlowNodeId: null,
+            expandedFlowNodes: new Set<string>(),
             flowUndo: [],
         };
         this.tabs.push(tab);
@@ -471,7 +479,7 @@ export class TabManager {
             try {
                 if (lowerPath.endsWith(".md")) {
                     await renderMarkdown(viewerEl, displayed);
-                    if (isFlow) this.bindFlowNavigation(viewerEl, displayed);
+                    if (isFlow) await this.renderFlowView(viewerEl, tab, displayed);
                 } else if (isHtml) {
                     renderHtmlFile(viewerEl, displayed);
                 } else {
@@ -488,17 +496,76 @@ export class TabManager {
     }
 
     /**
-     * 보기 모드의 FLOW 그림 — 참조가 걸린 노드를 누르면 그 요소를 탭으로 연다.
-     * (`[WP][2.0][2026.09.17]흐름(FLOW) 요소.md` 1단계)
+     * 보기 모드의 FLOW — 참조가 걸린 노드를 누르면 그 요소를 탭으로 열고,
+     * 하위 흐름은 칩으로 펼쳤다 접었다 한다.
      */
-    private bindFlowNavigation(viewerEl: HTMLElement, raw: string): void {
+    private async renderFlowView(viewerEl: HTMLElement, tab: Tab, raw: string): Promise<void> {
         const doc = parseFlow(raw);
+        const composed = await composeFlow(raw, tab.expandedFlowNodes, (path) => readProjectFile(path));
+
+        // 펼친 게 있으면 원본 자리의 그림만 합성본으로 갈아 끼운다(문서의 나머지는 그대로).
+        if (tab.expandedFlowNodes.size > 0 && composed.text !== "") {
+            const old = viewerEl.querySelector("pre.mermaid");
+            const holder = old?.parentElement;
+            if (holder && old) {
+                // mermaid는 문서에 붙어 있지 않은 요소를 그리지 못한다(치수를 재야 해서).
+                // 그래서 임시 컨테이너를 먼저 끼워 넣고 그린 뒤, 결과만 옮기고 치운다.
+                const staging = document.createElement("div");
+                holder.insertBefore(staging, old);
+                try {
+                    await renderMarkdown(staging, "```mermaid" + NL + composed.text + NL + "```");
+                    const drawn = staging.querySelector("pre.mermaid");
+                    if (drawn) holder.replaceChild(drawn, old);
+                } catch (err) {
+                    logError(`하위 흐름 펼침 렌더 실패: ${tab.path}`, err);
+                } finally {
+                    staging.remove();
+                }
+            }
+        }
+
+        if (composed.subflows.size > 0) {
+            this.renderSubflowChips(viewerEl, tab, composed);
+        }
+
         markFlowNodes(viewerEl, doc, null);
         viewerEl.addEventListener("click", (e) => {
             const id = flowNodeIdFromEvent(e);
             const ref = id ? (doc.nodes.find((n) => n.id === id)?.ref ?? null) : null;
             if (ref) void this.openByFilename(ref);
         });
+    }
+
+    /** 문서 맨 위에 붙는 하위 흐름 펼침 칩 — 어떤 노드를 펼칠 수 있는지 드러낸다. */
+    private renderSubflowChips(viewerEl: HTMLElement, tab: Tab, composed: Awaited<ReturnType<typeof composeFlow>>): void {
+        const bar = document.createElement("div");
+        bar.className = "subflow-bar";
+        const label = document.createElement("span");
+        label.className = "subflow-bar-label";
+        label.textContent = "하위 흐름";
+        bar.appendChild(label);
+
+        const doc = parseFlow(tab.content);
+        for (const [id] of composed.subflows) {
+            const expanded = tab.expandedFlowNodes.has(id);
+            const chip = document.createElement("button");
+            chip.className = "subflow-chip" + (expanded ? " subflow-chip--on" : "");
+            chip.textContent = `${expanded ? "⊖" : "⊕"} ${doc.nodes.find((n) => n.id === id)?.label || id}`;
+            chip.addEventListener("click", () => {
+                if (expanded) tab.expandedFlowNodes.delete(id);
+                else tab.expandedFlowNodes.add(id);
+                void this.renderActive();
+            });
+            bar.appendChild(chip);
+        }
+
+        for (const problem of composed.problems) {
+            const note = document.createElement("span");
+            note.className = "subflow-problem";
+            note.textContent = `⚠️ ${problem}`;
+            bar.appendChild(note);
+        }
+        viewerEl.prepend(bar);
     }
 
     /** 그림 편집 모드 — 왼쪽은 그림, 오른쪽은 선택 노드 속성 패널. */

@@ -177,13 +177,14 @@ export function extractDiagram(raw: string): string | null {
     return range ? lines.slice(range.start, range.end).join("\n") : null;
 }
 
-/** 한 줄을 간선 문장으로 해석한다. 아니면 null. */
-function parseEdgeLine(line: string): { indent: string; left: string; arrow: string; right: string } | null {
+/** 한 줄을 간선 문장으로 해석한다. 아니면 null. 하위 흐름 합성(flowCompose.ts)도 쓴다. */
+export function parseEdgeLine(line: string): { indent: string; left: string; arrow: string; right: string } | null {
     const m = EDGE_LINE.exec(line);
     return m ? { indent: m[1], left: m[2], arrow: m[3], right: m[4] } : null;
 }
 
-function idOf(expr: string): string {
+/** 노드 표현에서 id만 뽑는다(`scan[.loadstar 스캔]` → `scan`). */
+export function idOf(expr: string): string {
     return NODE_DEF_PARTS.exec(expr)?.[1] ?? expr;
 }
 
