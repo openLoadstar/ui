@@ -20,5 +20,6 @@ flowchart LR
 
 ### REFERENCES
 - step1: [WP][2.0][2026.08.13]뷰 전환 아키텍처.md
+- f1: [FLOW][2.0][2026.09.17]하위 흐름 샘플.md
 
 ### ISSUE
