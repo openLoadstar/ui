@@ -168,12 +168,9 @@ func flowCycles(records []fileRecord) [][]string {
 
 // cmdValidate implements `loadstar validate`.
 func cmdValidate(args []string) int {
-	root := resolveProjectRoot()
-	if len(args) > 0 {
-		root = args[0]
-	}
-	if !isProjectRoot(root) {
-		fmt.Fprintf(os.Stderr, "LOADSTAR 프로젝트가 아닙니다(.loadstar 없음): %s\n", root)
+	root, err := projectRootFromArgs(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 

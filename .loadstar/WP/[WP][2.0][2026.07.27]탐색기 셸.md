@@ -11,7 +11,7 @@
 - CHILDREN:
   - [WP][2.0][2026.09.10]파일 이력 뷰어.md
   - [WP][2.0][2026.09.10]검색.md
-- REFERENCE: [WP][2.0][2026.07.27]md Mermaid 뷰어.md
+- REFERENCE: [WP][2.0][2026.07.27]md viewer with mermaid.md
 
 ### ATTACHMENTS
 - https://wails.io — Wails 설치·프로젝트 구조 문서

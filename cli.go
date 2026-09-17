@@ -64,13 +64,13 @@ func printUsage() {
   loadstar todo [all|standby|active|done]   (미구현)
   loadstar issues                           (미구현)
   loadstar validate [경로]                  참조 무결성 검사(깨진 참조, 이름 충돌, FLOW 순환)
-  loadstar reindex                          구조 추출기 실행 — .loadstar/.cache/index.db 재생성`)
+  loadstar reindex [경로]                   구조 추출기 실행 — .loadstar/.cache/index.db 재생성`)
 }
 
 // cmdReindex implements `loadstar reindex` (`05.CLI_SPEC.md` §2) — 구조
 // 추출기(①)를 즉시 수동 실행해 SQLite를 재생성한다(extractor.go:Reindex).
 func cmdReindex(args []string) int {
-	root, err := findProjectRoot()
+	root, err := projectRootFromArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -374,6 +374,19 @@ flowchart LR
 // .loadstar/. Unlike v1(OLD_LOADSTAR/loadstar_cli), it does NOT auto-create
 // one — GUI 쪽 OpenProject도 기존 .loadstar 존재를 전제로 하는 것과 동일한
 // 원칙(app.go의 isProjectRoot)을 CLI에도 맞춘다.
+// projectRootFromArgs는 인자로 받은 경로를, 없으면 현재 위치에서 찾은 프로젝트
+// 루트를 돌려준다. 경로를 받는 명령들(reindex/validate)이 같은 규칙을 쓰게 한다.
+func projectRootFromArgs(args []string) (string, error) {
+	if len(args) > 0 && args[0] != "" {
+		root := filepath.Clean(args[0])
+		if info, err := os.Stat(filepath.Join(root, ".loadstar")); err != nil || !info.IsDir() {
+			return "", fmt.Errorf("LOADSTAR 프로젝트가 아닙니다(.loadstar 없음): %s", root)
+		}
+		return root, nil
+	}
+	return findProjectRoot()
+}
+
 func findProjectRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {

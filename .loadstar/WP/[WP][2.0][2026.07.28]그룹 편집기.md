@@ -11,7 +11,7 @@ GROUP은 자신의 ITEMS에 WP/DWP/하위 GROUP 파일명을 나열하는 방식
 - CHILDREN: []
 - REFERENCE:
   - [WP][2.0][2026.07.27]탐색기 셸.md
-  - [WP][2.0][2026.07.27]md Mermaid 뷰어.md
+  - [WP][2.0][2026.07.27]md viewer with mermaid.md
 
 ### ATTACHMENTS
 - https://github.com/openLoadstar/spec/blob/main/SPEC%202.0/appendix/GROUP.md — ITEMS 슬롯·멤버십 방향 원칙

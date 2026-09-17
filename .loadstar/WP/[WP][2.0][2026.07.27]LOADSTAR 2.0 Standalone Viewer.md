@@ -17,7 +17,7 @@ G7. v1 구조 v2 전환 — 기존 v1(loadstar_cli) 프로젝트 데이터를 v2
 ### CONNECTIONS
 - CHILDREN:
   - [WP][2.0][2026.07.27]구조 추출기.md
-  - [WP][2.0][2026.07.27]md Mermaid 뷰어.md
+  - [WP][2.0][2026.07.27]md viewer with mermaid.md
   - [WP][2.0][2026.07.27]온디맨드 도메인 조회기.md
   - [WP][2.0][2026.07.27]탐색기 셸.md
   - [WP][2.0][2026.07.27]CLI 진입점.md
