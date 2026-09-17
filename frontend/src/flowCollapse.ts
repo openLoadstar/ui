@@ -33,6 +33,17 @@ export function collapseGroups(raw: string, collapsed: ReadonlySet<string>): Col
     for (const g of targets) for (let i = g.open; i <= g.close; i++) dropped.add(i);
 
     const out: string[] = [];
+    const seen = new Set<string>();
+    // 같은 상자로 들어오는 화살표가 여럿이면 똑같은 줄이 생긴다 — 그런 줄만 한 번씩 남긴다.
+    // 중복 제거를 모든 줄에 걸면 접지 않은 구역들의 `end`가 하나만 남아 블록이 안 닫힌다.
+    const push = (line: string, dedupe: boolean) => {
+        if (dedupe) {
+            const key = line.trim();
+            if (seen.has(key)) return;
+            seen.add(key);
+        }
+        out.push(line);
+    };
     const placed = new Set<string>(); // 상자의 정의(도형·라벨)를 한 번만 적기 위해
     const boxExpr = (groupId: string): string => {
         const g = targets.find((x) => x.id === groupId)!;
@@ -51,31 +62,21 @@ export function collapseGroups(raw: string, collapsed: ReadonlySet<string>): Col
             if (fromBox && toBox && fromBox === toBox) continue;
             const left = fromBox ? boxExpr(fromBox) : edge.left;
             const right = toBox ? boxExpr(toBox) : edge.right;
-            out.push(`${edge.indent}${left} ${edge.arrow} ${right}`);
+            push(`${edge.indent}${left} ${edge.arrow} ${right}`, fromBox !== undefined || toBox !== undefined);
             continue;
         }
         const nodeOnly = NODE_LINE.exec(lines[i]);
         if (nodeOnly && boxOf.has(idOf(nodeOnly[2]))) {
-            out.push(`${nodeOnly[1]}${boxExpr(boxOf.get(idOf(nodeOnly[2]))!)}`);
+            push(`${nodeOnly[1]}${boxExpr(boxOf.get(idOf(nodeOnly[2]))!)}`, true);
             continue;
         }
-        out.push(lines[i]);
+        push(lines[i], false);
     }
-
-    // 같은 상자로 들어오는 화살표가 여럿이면 똑같은 줄이 생긴다 — 한 번만 그린다.
-    const seen = new Set<string>();
-    const deduped = out.filter((line) => {
-        const key = line.trim();
-        if (key === "") return true;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-    });
 
     // 아무 간선에도 안 걸린 상자(구역이 통째로 고립된 경우)도 그려는 준다.
     for (const g of targets) {
-        if (!placed.has(g.id)) deduped.push(`    ${g.id}[[${g.title}]]`);
+        if (!placed.has(g.id)) out.push(`    ${g.id}[[${g.title}]]`);
     }
 
-    return { text: deduped.join("\n"), groups: doc.groups };
+    return { text: out.join("\n"), groups: doc.groups };
 }
