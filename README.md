@@ -48,7 +48,7 @@ The left tree is a *perspective* on the project, swappable from the **보기 (Vi
 | View | What it shows |
 |:---|:---|
 | **Directory (GROUP) structure** | The GROUP hierarchy built by resolving `GROUP.ITEMS` recursively. Elements that belong to no GROUP sit at the root. WP rows carry a STATUS color dot, and the toolbar filter hides/shows WPs by status. |
-| **By date** | Every WP/DWP/GROUP/OTHER as one flat list, newest first, with a start/end date filter. |
+| **By date** | Every WP/DWP/GROUP/OTHER/FLOW as one flat list, newest first, with a start/end date filter. |
 | **Search** | Full-project search results — see below. |
 
 ### Markdown + Mermaid viewer and editor
@@ -58,6 +58,12 @@ The left tree is a *perspective* on the project, swappable from the **보기 (Vi
 OTHER files are handled by type: `.csv` / `.json` / `.txt` are shown verbatim so markdown syntax cannot mangle them, and self-contained `.html` files render inside a sandboxed iframe. A GROUP tab shows an info view instead — its member list as clickable links, plus a "copy" button that puts the group and its members on the clipboard as plain text.
 
 ![Mermaid rendering](docs/images/mermaid-viewer.png)
+
+### Flow diagrams — the `FLOW` element
+
+A `FLOW` element describes a process as one mermaid diagram, with each node optionally pointing at the WP / DWP / other FLOW it stands for. The whole project's flow lives in one file; a step that needs unpacking becomes its own FLOW and is drawn as a subroutine box — the same shape a function call has, which is the point.
+
+The diagram itself is plain mermaid inside `### DIAGRAM`, so it renders anywhere markdown does (GitHub included). The node → element links sit in `### REFERENCES`, outside the code block, so the extractor and the validator can still see the relationships. In the viewer, a node that points at something is outlined and clicking it opens that element; **✎ 그림 편집 (Edit diagram)** turns the same picture into a picker — select a node, attach or detach an element from the side panel, and only that one line of `REFERENCES` is rewritten. Shapes carry meaning: `[step]`, `{branch}`, `(( ))` merge, `[[subflow]]`, `[(store)]`, `((terminal))` — see [appendix/FLOW.md](https://github.com/openLoadstar/spec/blob/main/SPEC%202.0/appendix/FLOW.md).
 
 ### Git history per file
 
@@ -79,7 +85,7 @@ An Eclipse-style result list: matching files with a hit count, expandable into t
 
 ### Create, rename, delete elements
 
-**+ WP** / **+ DWP** scaffold a spec-shaped file and open it in edit mode right away; closing without ever saving offers to delete it again, so a mistyped name leaves nothing behind. Right-click a tree row to rename (the `[FORMAT][VER][DATE]` prefix is kept, only the label changes) or delete. "Delete" appends `.del` rather than removing the file — hidden from the tree, trivially undone in Explorer. Renaming also updates the `ITEMS` of every GROUP the file belonged to.
+**+ WP** / **+ DWP** / **+ FLOW** scaffold a spec-shaped file and open it in edit mode right away; closing without ever saving offers to delete it again, so a mistyped name leaves nothing behind. Right-click a tree row to rename (the `[FORMAT][VER][DATE]` prefix is kept, only the label changes) or delete. "Delete" appends `.del` rather than removing the file — hidden from the tree, trivially undone in Explorer. Renaming also updates the `ITEMS` of every GROUP the file belonged to.
 
 ### Group editor
 
@@ -99,7 +105,7 @@ OTHER is the one FORMAT exempt from the `[FORMAT][VER][DATE]이름.md` naming ru
 
 ```
 loadstar                           launch the GUI
-loadstar create <FORMAT> "name"    create a WP/DWP/GROUP file (wp|dwp|group)
+loadstar create <FORMAT> "name"    create a WP/DWP/GROUP/FLOW file (wp|dwp|group|flow)
 loadstar show                      STATUS distribution + documents that have ISSUEs
 loadstar reindex                   rebuild .loadstar/.cache/index.db
 ```
@@ -123,7 +129,7 @@ The GUI and the CLI share the same scaffolding and indexing code, so the two can
 ```
 <project>/
 └── .loadstar/
-    ├── WP/  DWP/  GROUP/  OTHER/     element files
+    ├── WP/  DWP/  GROUP/  OTHER/  FLOW/    element files
     └── .cache/index.db               extractor output (git-ignored)
 
 %AppData%\loadstar\

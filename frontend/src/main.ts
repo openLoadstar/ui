@@ -60,6 +60,7 @@ function startExplorer(projectRoot: string): void {
           <button class="tb-btn" data-action="new-wp">+ WP</button>
           <button class="tb-btn" data-action="new-dwp">+ DWP</button>
           <button class="tb-btn" data-role="new-group">+ GROUP</button>
+          <button class="tb-btn" data-action="new-flow">+ FLOW</button>
           <button class="tb-btn" data-action="reindex">⟳ 재색인</button>
           <div class="toolbar-spacer"></div>
           <select id="view-switcher" class="view-switcher"></select>
@@ -211,7 +212,7 @@ function startExplorer(projectRoot: string): void {
      * 채우게 한다. pendingCreation 탭이라 닫기(×)를 누르면 저장 확인 대신
      * 삭제 확인이 뜬다(tabs.ts).
      */
-    async function createAndOpenElement(format: "WP" | "DWP"): Promise<void> {
+    async function createAndOpenElement(format: "WP" | "DWP" | "FLOW"): Promise<void> {
         const name = prompt(`새 ${format} 이름:`);
         if (name === null) return; // 취소
         const trimmed = name.trim();
@@ -233,6 +234,7 @@ function startExplorer(projectRoot: string): void {
 
     document.querySelector<HTMLElement>('[data-action="new-wp"]')!.addEventListener("click", () => void createAndOpenElement("WP"));
     document.querySelector<HTMLElement>('[data-action="new-dwp"]')!.addEventListener("click", () => void createAndOpenElement("DWP"));
+    document.querySelector<HTMLElement>('[data-action="new-flow"]')!.addEventListener("click", () => void createAndOpenElement("FLOW"));
 
     document.querySelector<HTMLElement>('[data-action="reindex"]')!.addEventListener("click", () => {
         openReindexDialog({ onReindex: reindexProject });
@@ -324,7 +326,8 @@ function startExplorer(projectRoot: string): void {
     }
 
     document.querySelectorAll<HTMLElement>("[data-action]").forEach((el) => {
-        if (el.dataset.action === "new-wp" || el.dataset.action === "new-dwp" || el.dataset.action === "reindex") return; // 위에서 별도 처리
+        const handled = ["new-wp", "new-dwp", "new-flow", "reindex"];
+        if (handled.includes(el.dataset.action ?? "")) return; // 위에서 별도 처리
         el.addEventListener("click", () => {
             const action = el.dataset.action;
             logInfo(`[TODO] action not yet implemented: ${action}`);

@@ -8,6 +8,7 @@
     --text-dim: #9aa5b8;
     --accent: #4a8cff;
     --danger: #e0a458;
+    --flow: #b08cff; /* FLOW 아이콘 — WP(흰색)·DWP(파랑)와 구분되는 단일 용도 색 */
     --status-idl: #6b7690;
     --status-stb: #4caf7d;
     --status-oos: #7d7a9c;
@@ -1439,4 +1440,195 @@ mark.find-hit--current {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* --- FLOW 그림 편집 (`[WP][2.0][2026.09.17]흐름(FLOW) 요소.md`) --- */
+.mode-switch {
+    display: flex;
+    gap: 4px;
+}
+
+.flow-editor {
+    display: flex;
+    gap: 12px;
+    height: 100%;
+    min-height: 0;
+}
+
+.flow-canvas {
+    flex: 1;
+    min-width: 0;
+    max-width: none; /* .md-viewer의 860px 본문 폭 제한 해제 — 그림은 넓게 */
+    overflow: auto;
+}
+
+.flow-panel {
+    width: 280px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow-y: auto;
+}
+
+.flow-panel-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+}
+
+.flow-panel-section--grow {
+    flex: 1;
+    min-height: 120px;
+}
+
+.flow-panel-label {
+    color: var(--text-dim);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.flow-panel-node {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.flow-panel-id {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.flow-panel-shape {
+    color: var(--flow);
+    font-size: 11px;
+}
+
+.flow-panel-nodelabel {
+    font-size: 13px;
+    word-break: break-all;
+}
+
+.flow-panel-empty {
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.flow-panel-ref {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.flow-ref-open {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.flow-ref-open:hover {
+    text-decoration: underline;
+}
+
+.flow-ref-unlink {
+    padding: 0 6px;
+    flex-shrink: 0;
+}
+
+.flow-panel-filter {
+    padding: 3px 6px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.flow-panel-filter:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.flow-panel-candidates {
+    flex: 1;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px;
+}
+
+.flow-candidate {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.flow-candidate:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.flow-candidate--current {
+    color: var(--accent);
+}
+
+.flow-candidate-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.flow-panel-orphans {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+}
+
+.flow-panel-orphan {
+    color: var(--danger);
+    font-size: 11px;
+    word-break: break-all;
+}
+
+/* 그림 위 노드 상태 — 연결된 노드는 누를 수 있다는 걸 커서와 밑줄로 드러낸다. */
+.flow-node {
+    cursor: pointer;
+}
+
+.flow-node--linked rect,
+.flow-node--linked polygon,
+.flow-node--linked circle,
+.flow-node--linked path {
+    stroke: var(--flow) !important;
+    stroke-width: 2px !important;
+}
+
+.flow-node--selected rect,
+.flow-node--selected polygon,
+.flow-node--selected circle,
+.flow-node--selected path {
+    stroke: var(--accent) !important;
+    stroke-width: 3px !important;
 }

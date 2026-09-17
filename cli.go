@@ -57,7 +57,7 @@ func printUsage() {
 
 사용법:
   loadstar                          GUI 실행
-  loadstar create <FORMAT> "이름"     WP/DWP/GROUP 파일 생성 (FORMAT: wp|dwp|group)
+  loadstar create <FORMAT> "이름"     WP/DWP/GROUP/FLOW 파일 생성 (FORMAT: wp|dwp|group|flow)
   loadstar show                             STATUS별 분포 + ISSUE 있는 문서 요약
   loadstar todo [all|standby|active|done]   (미구현)
   loadstar issues                           (미구현)
@@ -245,7 +245,7 @@ func extractSection(raw, header string) string {
 	return strings.TrimSpace(strings.Join(body, "\n"))
 }
 
-var elementFormats = map[string]string{"wp": "WP", "dwp": "DWP", "group": "GROUP"}
+var elementFormats = map[string]string{"wp": "WP", "dwp": "DWP", "group": "GROUP", "flow": "FLOW"}
 
 // cmdCreate implements `loadstar create <FORMAT> "이름"` (`05.CLI_SPEC.md` §2).
 // FORMAT/VER/DATE는 구조화 필드, 이름은 자유 텍스트(`02.ELEMENT_FORMAT.md` §2) —
@@ -341,6 +341,28 @@ func scaffoldContent(format string) string {
 
 ### CONNECTIONS
 - ITEMS: []
+`
+	case "FLOW":
+		// DIAGRAM은 순수 mermaid, REFERENCES는 코드블록 밖에 둔다(`appendix/FLOW.md`).
+		// 팔레트 예시를 한 줄 넣어둔다 — 빈 코드블록만 주면 도형 규약을 매번 부록에서 찾아야 한다.
+		// 백틱은 Go raw 문자열 안에 넣을 수 없어 따로 이어 붙인다.
+		fence := "```"
+		return `### IDENTITY
+- SUMMARY:
+
+### CONNECTIONS
+- REFERENCE: []
+
+### DIAGRAM
+` + fence + `mermaid
+flowchart LR
+    begin((시작)) --> step1[단계]
+    step1 --> done((끝))
+` + fence + `
+
+### REFERENCES
+
+### ISSUE
 `
 	}
 	return ""

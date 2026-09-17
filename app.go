@@ -412,7 +412,7 @@ func (a *App) addRecentProject(dir string) error {
 	return nil
 }
 
-var validFormatDirs = map[string]bool{"WP": true, "DWP": true, "GROUP": true, "OTHER": true}
+var validFormatDirs = map[string]bool{"WP": true, "DWP": true, "GROUP": true, "OTHER": true, "FLOW": true}
 
 // ListFormatFiles lists the element filenames directly under
 // .loadstar/<format>/, returned as project-relative paths (e.g.
@@ -641,7 +641,7 @@ func (a *App) ListAllFilesWithModTime() ([]DatedFile, error) {
 		return nil, errors.New("열려 있는 프로젝트가 없습니다")
 	}
 	result := []DatedFile{}
-	for _, format := range []string{"WP", "DWP", "GROUP", "OTHER"} {
+	for _, format := range []string{"WP", "DWP", "GROUP", "OTHER", "FLOW"} {
 		paths, err := a.ListFormatFiles(format)
 		if err != nil {
 			return nil, err

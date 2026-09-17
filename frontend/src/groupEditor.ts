@@ -221,13 +221,14 @@ export function openGroupEditor(onChanged?: () => void): void {
         const selected = selectedNode();
         if (!selected) return;
 
-        const [wp, dwp, other] = await Promise.all([
+        const [wp, dwp, other, flow] = await Promise.all([
             listFormatFiles("WP"),
             listFormatFiles("DWP"),
             listFormatFiles("OTHER"),
+            listFormatFiles("FLOW"),
         ]);
         const currentItems = new Set(selected.items);
-        const candidates = [...wp, ...dwp, ...other]
+        const candidates = [...wp, ...dwp, ...other, ...flow]
             .map(basename)
             .filter((filename) => !currentItems.has(filename))
             .map((filename) => ({ filename, ...parseElementFilename(filename) }));
@@ -235,7 +236,7 @@ export function openGroupEditor(onChanged?: () => void): void {
         membersBody.innerHTML = "";
 
         if (candidates.length === 0) {
-            membersBody.innerHTML = `<div class="modal-empty">추가할 수 있는 WP/DWP/OTHER가 없습니다.</div>`;
+            membersBody.innerHTML = `<div class="modal-empty">추가할 수 있는 WP/DWP/OTHER/FLOW가 없습니다.</div>`;
         } else {
             const list = document.createElement("ul");
             list.className = "add-picker-list";

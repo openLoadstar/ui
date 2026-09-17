@@ -30,6 +30,7 @@ import {
 import type { main } from "../wailsjs/go/models";
 // 개발 중 브라우저 미리보기 전용 — 실제 WP 파일을 그대로 읽어와 목업으로 쓴다(내용 중복 없음).
 import structuralExtractorRaw from "../../.loadstar/WP/[WP][2.0][2026.07.27]구조 추출기.md?raw";
+import indexPipelineFlowRaw from "../../.loadstar/FLOW/[FLOW][2.0][2026.09.17]색인 파이프라인.md?raw";
 
 function isWailsRuntimeAvailable(): boolean {
     return typeof window !== "undefined" && !!(window as unknown as { go?: unknown }).go;
@@ -37,6 +38,7 @@ function isWailsRuntimeAvailable(): boolean {
 
 const mockStore: Record<string, string> = {
     ".loadstar/WP/[WP][2.0][2026.07.27]구조 추출기.md": structuralExtractorRaw,
+    ".loadstar/FLOW/[FLOW][2.0][2026.09.17]색인 파이프라인.md": indexPipelineFlowRaw,
     "__default__": [
         "# 브라우저 미리보기 모드",
         "",
@@ -157,6 +159,7 @@ const mockDirListing: Record<string, string[]> = {
     DWP: [],
     GROUP: [],
     OTHER: [],
+    FLOW: [".loadstar/FLOW/[FLOW][2.0][2026.09.17]색인 파이프라인.md"],
 };
 
 /**
@@ -209,6 +212,25 @@ export async function listOtherFileExtensions(): Promise<string[]> {
 const mockScaffoldByFormat: Record<string, (name: string) => string> = {
     WP: (name) => `## [STATUS] S_IDL\n\n### IDENTITY\n- SUMMARY: ${name}\n\n### CONNECTIONS\n- CHILDREN: []\n- REFERENCE: []\n\n### TODO\n# TASK\n- [ ] \n`,
     DWP: (name) => `### IDENTITY\n- SUMMARY: ${name}\n\n### CONNECTIONS\n- REFERENCE: []\n`,
+    FLOW: (name) => [
+        "### IDENTITY",
+        `- SUMMARY: ${name}`,
+        "",
+        "### CONNECTIONS",
+        "- REFERENCE: []",
+        "",
+        "### DIAGRAM",
+        "```mermaid",
+        "flowchart LR",
+        "    begin((시작)) --> step1[단계]",
+        "    step1 --> done((끝))",
+        "```",
+        "",
+        "### REFERENCES",
+        "",
+        "### ISSUE",
+        "",
+    ].join(String.fromCharCode(10)), // 백슬래시 n을 쓰지 않으려고 배열로 조립 — 코드펜스가 섞여 있어 템플릿 문자열도 쓸 수 없다
 };
 
 function formatDateYYYYMMDD(d: Date): string {

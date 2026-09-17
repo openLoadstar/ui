@@ -2,7 +2,7 @@
 
 import { STATUS_COLORS, STATUS_LABELS, type StatusBucket } from "./wpStatus";
 
-export type ElementFormat = "GROUP" | "WP" | "DWP" | "OTHER";
+export type ElementFormat = "GROUP" | "WP" | "DWP" | "OTHER" | "FLOW";
 
 export interface TreeNode {
     name: string;
@@ -32,11 +32,18 @@ function fileIconSvg(strokeColor: string): string {
     return `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="${strokeColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
 }
 
+// FLOW는 파일이라기보다 "그림"이라 문서 아이콘과 아예 다른 모양을 쓴다 —
+// 두 갈래가 한 점으로 합쳐지는 글리프.
+function flowIconSvg(): string {
+    return `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--flow)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 7l10 4M7 17l10-4"/></svg>`;
+}
+
 export const formatIcon: Record<ElementFormat, string> = {
     GROUP: "\u{1F4C1}", // 📁
     WP: fileIconSvg("currentColor"), // 트리 기본 텍스트색(다크 테마에서 흰색 계열)
     DWP: fileIconSvg("var(--accent)"), // 파란 accent색
     OTHER: "\u{1F4DD}", // 📝
+    FLOW: flowIconSvg(),
 };
 
 const STRUCTURED_NAME = /^\[([^\]]+)\]\[[^\]]+\]\[[^\]]+\](.+)\.md$/;

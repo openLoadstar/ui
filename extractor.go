@@ -179,7 +179,7 @@ type fileRecord struct {
 	modTime    time.Time
 }
 
-var validFormats = []string{"WP", "DWP", "GROUP", "OTHER"}
+var validFormats = []string{"WP", "DWP", "GROUP", "OTHER", "FLOW"}
 
 // loadOtherExtensions mirrors app.go:GetOtherExtensions — CLI 쪽엔 *App
 // 인스턴스가 없어서 같은 설정 파일(otherExtensionsPath)을 직접 읽는다.
@@ -430,7 +430,7 @@ func Reindex(root string) (ReindexStats, error) {
 			continue
 		}
 		switch rec.format {
-		case "WP", "DWP":
+		case "WP", "DWP", "FLOW":
 			if err := addEdges(rec.filename, parseConnectionField(body, "PARENT"), "PARENT"); err != nil {
 				return stats, err
 			}

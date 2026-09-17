@@ -33,6 +33,15 @@ function validateDwp(raw: string): string[] {
     return validateCommonEnvelope(raw);
 }
 
+// FLOW는 공통 봉투 + 그림 한 장(`appendix/FLOW.md`). REFERENCES는 선택이라
+// 검사하지 않는다 — 제어 노드만으로 이뤄진 흐름도 유효하다.
+function validateFlow(raw: string): string[] {
+    const issues = validateCommonEnvelope(raw);
+    if (!has(/^###\s*DIAGRAM/m, raw)) issues.push("`### DIAGRAM` 섹션이 없습니다.");
+    else if (!has(/```mermaid/, raw)) issues.push("`### DIAGRAM`에 mermaid 코드블록이 없습니다.");
+    return issues;
+}
+
 export function validateContent(format: ElementFormat, raw: string): ValidationResult {
     let issues: string[];
     switch (format) {
@@ -44,6 +53,9 @@ export function validateContent(format: ElementFormat, raw: string): ValidationR
             break;
         case "GROUP":
             issues = validateCommonEnvelope(raw);
+            break;
+        case "FLOW":
+            issues = validateFlow(raw);
             break;
         case "OTHER":
             // OTHER는 공통 봉투 자체가 면제된다(02.ELEMENT_FORMAT.md §6) — 검사할 게 없다.

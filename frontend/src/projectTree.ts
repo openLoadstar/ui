@@ -46,14 +46,15 @@ function sortByName(nodes: TreeNode[]): TreeNode[] {
 }
 
 export async function buildProjectTree(): Promise<TreeNode[]> {
-    const [groups, wpPaths, dwpPaths, otherPaths] = await Promise.all([
+    const [groups, wpPaths, dwpPaths, otherPaths, flowPaths] = await Promise.all([
         loadAllGroups(),
         listFormatFiles("WP"),
         listFormatFiles("DWP"),
         listFormatFiles("OTHER"),
+        listFormatFiles("FLOW"),
     ]);
 
-    const memberPaths = [...wpPaths, ...dwpPaths, ...otherPaths];
+    const memberPaths = [...wpPaths, ...dwpPaths, ...otherPaths, ...flowPaths];
     const memberPathByFilename = new Map(memberPaths.map((p) => [basename(p), p]));
 
     const groupTreeNodes = new Map<string, TreeNode>();

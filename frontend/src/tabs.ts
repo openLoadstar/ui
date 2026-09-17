@@ -1,6 +1,6 @@
 // 우측 탭 영역 관리 — 탭 열기/닫기/전환 + 보기·편집 모드 + 저장.
 
-import type { ElementFormat, TreeNode } from "./tree";
+import { parseElementFilename, type ElementFormat, type TreeNode } from "./tree";
 import { readProjectFile, writeProjectFile, readExternalFile, deleteProjectFile, gitFileHistory, gitFileAtCommit } from "./fs";
 import { renderMarkdown, renderPlainText, renderHtmlFile } from "./viewer";
 import { renderGroupInfo } from "./groupInfoView";
@@ -9,8 +9,12 @@ import { logInfo, logError } from "./log";
 import { FindBar, type FindTarget } from "./find";
 import { fillHistorySelect, WORKING_TREE } from "./historySelect";
 import type { main } from "../wailsjs/go/models";
+import { parseFlow, setNodeRef, extractDiagram } from "./flowFile";
+import { markFlowNodes, flowNodeIdFromEvent, renderFlowPanel } from "./flowView";
 
-type Mode = "view" | "edit";
+// FLOW 탭에만 "diagram"(그림 편집)이 추가된다 — 그림에서 노드를 고르고
+// 요소를 연결하는 모드. 원문 편집은 여전히 "edit"(textarea)다.
+type Mode = "view" | "edit" | "diagram";
 
 interface Tab {
     id: string;
@@ -40,7 +44,11 @@ interface Tab {
     viewingHash: string | null;
     /** viewingHash가 가리키는 시점의 원문. content(현재 내용)는 그대로 보존한다. */
     historyContent: string;
+    /** FLOW 탭의 그림 편집 모드에서 지금 선택된 노드 id. */
+    selectedFlowNodeId: string | null;
 }
+
+const NL = String.fromCharCode(10);
 
 function fileNameOf(path: string): string {
     return path.split(/[\\/]/).pop() ?? path;
@@ -133,6 +141,7 @@ export class TabManager {
             historyLoading: false,
             viewingHash: null,
             historyContent: "",
+            selectedFlowNodeId: null,
         };
         this.tabs.push(tab);
         this.activeId = tab.id;
@@ -176,6 +185,7 @@ export class TabManager {
             historyLoading: false,
             viewingHash: null,
             historyContent: "",
+            selectedFlowNodeId: null,
         };
         this.tabs.push(tab);
         this.activeId = tab.id;
@@ -267,6 +277,13 @@ export class TabManager {
         void this.renderActive();
     }
 
+    private setMode(mode: Mode): void {
+        const tab = this.activeTab();
+        if (!tab || tab.mode === mode) return;
+        tab.mode = mode;
+        void this.renderActive();
+    }
+
     private async save(): Promise<void> {
         const tab = this.activeTab();
         if (!tab || tab.external || tab.format === "GROUP" || tab.viewingHash !== null) return;
@@ -325,6 +342,7 @@ export class TabManager {
         }
 
         const isGroup = tab.format === "GROUP";
+        const isFlow = tab.format === "FLOW";
         const viewingHistory = tab.viewingHash !== null;
         // 이력은 프로젝트 안의 파일에만 붙인다 — 외부 탐색 파일(절대경로)은
         // 어느 저장소에 속하는지 보장할 수 없다.
@@ -335,8 +353,15 @@ export class TabManager {
               ? "" // 그룹 편집기가 멤버십 수정을 전담 — 이 탭은 정보 표시 전용
               : tab.external
                 ? '<span class="viewer-external-badge">읽기 전용 (탐색됨)</span>'
-                : `<button class="tb-btn" data-role="toggle-mode"></button>
-                 <button class="tb-btn" data-role="save" ${tab.mode === "edit" ? "" : "disabled"}>저장</button>`;
+                : isFlow
+                  ? `<div class="mode-switch">
+                       <button class="tb-btn" data-mode="view">👁 보기</button>
+                       <button class="tb-btn" data-mode="diagram">✎ 그림 편집</button>
+                       <button class="tb-btn" data-mode="edit">&lt;/&gt; 텍스트 편집</button>
+                     </div>
+                     <button class="tb-btn" data-role="save" ${tab.mode === "view" ? "disabled" : ""}>저장</button>`
+                  : `<button class="tb-btn" data-role="toggle-mode"></button>
+                 <button class="tb-btn" data-role="save" ${tab.mode === "view" ? "disabled" : ""}>저장</button>`;
 
         this.contentEl.innerHTML = `
             <div class="viewer-toolbar">
@@ -357,9 +382,17 @@ export class TabManager {
         }
 
         if (!tab.external && !isGroup && !viewingHistory) {
-            const toggleBtn = this.contentEl.querySelector<HTMLButtonElement>('[data-role="toggle-mode"]')!;
-            toggleBtn.textContent = tab.mode === "view" ? "✎ 편집" : "👁 미리보기";
-            toggleBtn.addEventListener("click", () => this.toggleMode());
+            if (isFlow) {
+                for (const btn of Array.from(this.contentEl.querySelectorAll<HTMLButtonElement>("[data-mode]"))) {
+                    const mode = btn.dataset.mode as Mode;
+                    btn.classList.toggle("tb-btn--primary", tab.mode === mode);
+                    btn.addEventListener("click", () => this.setMode(mode));
+                }
+            } else {
+                const toggleBtn = this.contentEl.querySelector<HTMLButtonElement>('[data-role="toggle-mode"]')!;
+                toggleBtn.textContent = tab.mode === "view" ? "✎ 편집" : "👁 미리보기";
+                toggleBtn.addEventListener("click", () => this.toggleMode());
+            }
 
             this.contentEl
                 .querySelector<HTMLElement>('[data-role="save"]')!
@@ -377,6 +410,8 @@ export class TabManager {
                 logError(`GROUP 정보 렌더링 실패: ${tab.path}`, err);
                 body.innerHTML = `<div class="viewer-empty">⚠️ GROUP 정보를 표시하는 중 오류가 발생했습니다. 콘솔/로그를 확인하세요.</div>`;
             }
+        } else if (isFlow && tab.mode === "diagram" && !viewingHistory) {
+            await this.renderFlowEditor(body, tab);
         } else if (tab.mode === "edit" && !viewingHistory) {
             body.innerHTML = `<textarea class="editor-textarea" spellcheck="false"></textarea>`;
             const textarea = body.querySelector<HTMLTextAreaElement>(".editor-textarea")!;
@@ -400,6 +435,7 @@ export class TabManager {
             try {
                 if (lowerPath.endsWith(".md")) {
                     await renderMarkdown(viewerEl, displayed);
+                    if (isFlow) this.bindFlowNavigation(viewerEl, displayed);
                 } else if (isHtml) {
                     renderHtmlFile(viewerEl, displayed);
                 } else {
@@ -413,6 +449,80 @@ export class TabManager {
 
         // 탭 내용이 통째로 다시 그려졌으므로, 열려 있던 찾기 바를 새 DOM에 다시 붙인다.
         this.findBar.attach(this.contentEl, this.findTarget());
+    }
+
+    /**
+     * 보기 모드의 FLOW 그림 — 참조가 걸린 노드를 누르면 그 요소를 탭으로 연다.
+     * (`[WP][2.0][2026.09.17]흐름(FLOW) 요소.md` 1단계)
+     */
+    private bindFlowNavigation(viewerEl: HTMLElement, raw: string): void {
+        const doc = parseFlow(raw);
+        markFlowNodes(viewerEl, doc, null);
+        viewerEl.addEventListener("click", (e) => {
+            const id = flowNodeIdFromEvent(e);
+            const ref = id ? (doc.nodes.find((n) => n.id === id)?.ref ?? null) : null;
+            if (ref) void this.openByFilename(ref);
+        });
+    }
+
+    /** 그림 편집 모드 — 왼쪽은 그림, 오른쪽은 선택 노드 속성 패널. */
+    private async renderFlowEditor(body: HTMLElement, tab: Tab): Promise<void> {
+        body.innerHTML = `
+            <div class="flow-editor">
+                <div class="flow-canvas md-viewer"></div>
+                <div class="flow-panel"></div>
+            </div>
+        `;
+        const canvas = body.querySelector<HTMLElement>(".flow-canvas")!;
+        const panel = body.querySelector<HTMLElement>(".flow-panel")!;
+
+        const diagram = extractDiagram(tab.content);
+        if (diagram === null) {
+            canvas.innerHTML = `<div class="viewer-empty">⚠️ DIAGRAM 섹션에서 mermaid 코드블록을 찾지 못했습니다. 텍스트 편집으로 확인하세요.</div>`;
+        } else {
+            try {
+                // 문서 전체가 아니라 그림만 다시 그린다 — 편집 모드에서는 그림이 주인공이다.
+                await renderMarkdown(canvas, "```mermaid" + NL + diagram + NL + "```");
+            } catch (err) {
+                logError(`흐름도 렌더링 실패: ${tab.path}`, err);
+                canvas.innerHTML = `<div class="viewer-empty">⚠️ 흐름도를 그리는 중 오류가 발생했습니다.</div>`;
+            }
+        }
+
+        // 연결이 바뀔 때마다 그림을 다시 그리지 않는다 — REFERENCES는 그림 모양을
+        // 바꾸지 않으므로 노드 클래스와 패널만 갱신하면 된다(선택·스크롤 유지).
+        const refresh = () => {
+            const doc = parseFlow(tab.content);
+            markFlowNodes(canvas, doc, tab.selectedFlowNodeId);
+            renderFlowPanel(panel, {
+                doc,
+                selected: doc.nodes.find((n) => n.id === tab.selectedFlowNodeId) ?? null,
+                onLink: (id, filename) => {
+                    tab.content = setNodeRef(tab.content, id, filename);
+                    if (!tab.dirty) {
+                        tab.dirty = true;
+                        this.renderTabBar();
+                    }
+                    refresh();
+                },
+                onOpenRef: (filename) => void this.openByFilename(filename),
+            });
+        };
+
+        canvas.addEventListener("click", (e) => {
+            tab.selectedFlowNodeId = flowNodeIdFromEvent(e); // 빈 곳을 누르면 선택 해제
+            refresh();
+        });
+        refresh();
+    }
+
+    /**
+     * 요소 파일명으로 탭을 연다 — FORMAT 접두어로 폴더를 판단한다
+     * (`02.ELEMENT_FORMAT.md` §4, 패턴에 안 맞으면 OTHER).
+     */
+    private async openByFilename(filename: string): Promise<void> {
+        const { format, name } = parseElementFilename(filename);
+        await this.open({ name, format, path: `.loadstar/${format}/${filename}` });
     }
 
     /** 현재 탭 화면에서 찾기 대상(보기 모드 본문 / 편집 모드 textarea)을 집어낸다. */

@@ -61,7 +61,7 @@ func (a *App) SearchInFiles(query string, caseSensitive bool) ([]SearchFileResul
 	}
 
 	results := []SearchFileResult{}
-	for _, format := range []string{"WP", "DWP", "GROUP", "OTHER"} {
+	for _, format := range []string{"WP", "DWP", "GROUP", "OTHER", "FLOW"} {
 		paths, err := a.ListFormatFiles(format)
 		if err != nil {
 			return nil, err
