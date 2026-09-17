@@ -598,8 +598,20 @@ export class TabManager {
                 selected: doc.nodes.find((n) => n.id === tab.selectedFlowNodeId) ?? null,
                 onOpenRef: (filename) => void this.openByFilename(filename),
                 onLink: (id, filename) => {
-                    this.applyFlowEdit(tab, setNodeRef(tab.content, id, filename));
-                    void refresh(false);
+                    let next = setNodeRef(tab.content, id, filename);
+                    // FLOW를 가리키는 노드는 하위 흐름 도형이어야 한다(`appendix/FLOW.md` 팔레트).
+                    // 연결과 도형이 따로 놀면 그림만 보고는 하위 흐름인 줄 알 수 없다 —
+                    // 연결할 때 도형까지 같이 맞춘다(되돌리기 한 칸에 함께 들어간다).
+                    const node = doc.nodes.find((n) => n.id === id);
+                    const becomesSubflow =
+                        filename !== null &&
+                        node !== undefined &&
+                        node.shape !== "subflow" &&
+                        parseElementFilename(filename).format === "FLOW";
+                    if (becomesSubflow) next = setNodeLabel(next, id, "subflow", node!.label);
+                    this.applyFlowEdit(tab, next);
+                    // 연결만 바뀌었으면 그림은 그대로다 — 도형이 바뀌었을 때만 다시 그린다.
+                    void refresh(becomesSubflow);
                 },
                 onLabel: (id, shape, label) => {
                     this.applyFlowEdit(tab, setNodeLabel(tab.content, id, shape, label));
