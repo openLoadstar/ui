@@ -22,7 +22,7 @@ export interface ComposeResult {
 }
 
 /** 하위 흐름에서 부모 화살표를 이어 붙일 자리. */
-interface EntryExit {
+export interface EntryExit {
     entry: string;
     exit: string;
     /** 그리지 않고 흡수한 시작·종료 노드. */
@@ -34,7 +34,7 @@ interface EntryExit {
  * 그게 `((시작))`/`((끝))`이면 그리지 않고 그다음·그앞 노드를 쓴다 — 부모 흐름
  * 한가운데에 시작·끝 표시가 또 나오는 건 군더더기다.
  */
-function entryExitOf(nodes: FlowNode[], edges: { from: string; to: string }[]): EntryExit | null {
+export function entryExitOf(nodes: FlowNode[], edges: { from: string; to: string }[]): EntryExit | null {
     const hasIncoming = new Set(edges.map((e) => e.to));
     const hasOutgoing = new Set(edges.map((e) => e.from));
     const entries = nodes.filter((n) => !hasIncoming.has(n.id));

@@ -6,6 +6,7 @@ import {
     writeProjectFile,
     readExternalFile,
     deleteProjectFile,
+    createElement,
     gitFileHistory,
     gitFileAtCommit,
 } from "./fs";
@@ -16,6 +17,7 @@ import { logInfo, logError } from "./log";
 import { FindBar, type FindTarget } from "./find";
 import { fillHistorySelect, WORKING_TREE } from "./historySelect";
 import type { main } from "../wailsjs/go/models";
+import { groupBoundary, groupIntoSubflow, ungroupSubflow } from "./flowGroup";
 import {
     parseFlow,
     setNodeRef,
@@ -68,8 +70,11 @@ interface Tab {
     viewingHash: string | null;
     /** viewingHash가 가리키는 시점의 원문. content(현재 내용)는 그대로 보존한다. */
     historyContent: string;
-    /** FLOW 탭의 그림 편집 모드에서 지금 선택된 노드 id. */
-    selectedFlowNodeId: string | null;
+    /**
+     * 그림 편집 모드에서 고른 노드 id들(고른 순서). 마지막 것이 속성 편집 대상이고,
+     * 여럿이면 하위 흐름으로 묶을 후보가 된다. Ctrl+클릭으로 더하고 뺀다.
+     */
+    selectedFlowNodeIds: string[];
     /**
      * 보기 모드에서 펼쳐 놓은 하위 흐름 노드 id들. 펼침은 화면에서만 합성하고
      * 파일에는 쓰지 않으므로(flowCompose.ts), 상태도 탭에만 둔다.
@@ -180,7 +185,7 @@ export class TabManager {
             historyLoading: false,
             viewingHash: null,
             historyContent: "",
-            selectedFlowNodeId: null,
+            selectedFlowNodeIds: [],
             expandedFlowNodes: new Set<string>(),
             flowUndo: [],
         };
@@ -226,7 +231,7 @@ export class TabManager {
             historyLoading: false,
             viewingHash: null,
             historyContent: "",
-            selectedFlowNodeId: null,
+            selectedFlowNodeIds: [],
             expandedFlowNodes: new Set<string>(),
             flowUndo: [],
         };
@@ -528,7 +533,7 @@ export class TabManager {
             this.renderSubflowChips(viewerEl, tab, composed);
         }
 
-        markFlowNodes(viewerEl, doc, null);
+        markFlowNodes(viewerEl, doc, new Set());
         viewerEl.addEventListener("click", (e) => {
             const id = flowNodeIdFromEvent(e);
             const ref = id ? (doc.nodes.find((n) => n.id === id)?.ref ?? null) : null;
@@ -586,7 +591,12 @@ export class TabManager {
         const refresh = async (redraw: boolean): Promise<void> => {
             if (redraw) await this.drawFlowCanvas(canvas, tab);
             const doc = parseFlow(tab.content);
-            markFlowNodes(canvas, doc, tab.selectedFlowNodeId);
+            const selectedIds = new Set(tab.selectedFlowNodeIds.filter((id) => doc.nodes.some((n) => n.id === id)));
+            tab.selectedFlowNodeIds = [...selectedIds];
+            markFlowNodes(canvas, doc, selectedIds);
+            const selectedNodes = tab.selectedFlowNodeIds
+                .map((id) => doc.nodes.find((n) => n.id === id))
+                .filter((n): n is NonNullable<typeof n> => n !== undefined);
             const focusLabel = focusLabelOnce;
             focusLabelOnce = false;
             // 간선 라벨은 노드 모델에 없다 — 화면에 뿌릴 값만 원문에서 읽어 넘긴다.
@@ -595,7 +605,9 @@ export class TabManager {
                 doc,
                 focusLabel,
                 edgeLabels,
-                selected: doc.nodes.find((n) => n.id === tab.selectedFlowNodeId) ?? null,
+                selectedNodes,
+                selected: selectedNodes.length === 1 ? selectedNodes[0] : null,
+                groupProblem: groupBoundary(doc, selectedIds).problem,
                 onOpenRef: (filename) => void this.openByFilename(filename),
                 onLink: (id, filename) => {
                     let next = setNodeRef(tab.content, id, filename);
@@ -619,7 +631,7 @@ export class TabManager {
                 },
                 onRename: (oldId, newId) => {
                     this.applyFlowEdit(tab, renameNodeId(tab.content, oldId, newId));
-                    tab.selectedFlowNodeId = newId;
+                    tab.selectedFlowNodeIds = [newId];
                     void refresh(true);
                 },
                 onAdd: (anchorId, mode, shape, label) => {
@@ -641,7 +653,7 @@ export class TabManager {
                         }
                         this.applyFlowEdit(tab, addNode(tab.content, { anchorId, position: "after", id, shape, label }));
                     }
-                    tab.selectedFlowNodeId = id; // 방금 만든 노드를 이어서 다루게 된다
+                    tab.selectedFlowNodeIds = [id]; // 방금 만든 노드를 이어서 다루게 된다
                     focusLabelOnce = true; // 임시 라벨이 들어갔을 수 있으니 바로 고쳐 쓰게
                     void refresh(true);
                 },
@@ -670,7 +682,7 @@ export class TabManager {
                 onEdgeInsert: (line) => {
                     const id = nextNodeId(doc, "step");
                     this.applyFlowEdit(tab, insertOnEdge(tab.content, line, { id, shape: "step", label: "" }));
-                    tab.selectedFlowNodeId = id;
+                    tab.selectedFlowNodeIds = [id];
                     focusLabelOnce = true;
                     void refresh(true);
                 },
@@ -682,6 +694,8 @@ export class TabManager {
                     this.applyFlowEdit(tab, deleteEdge(tab.content, line));
                     void refresh(true);
                 },
+                onGroup: (name) => void this.groupSelection(tab, name, refresh),
+                onUngroup: (id) => void this.ungroupNode(tab, id, refresh),
                 onDelete: (id) => {
                     const node = doc.nodes.find((n) => n.id === id);
                     const hasLabeledEdge = doc.edges.some((e) => e.from === id || e.to === id);
@@ -690,7 +704,7 @@ export class TabManager {
                         : `"${node?.label || id}" 노드를 지울까요?`;
                     if (!confirm(warn)) return;
                     this.applyFlowEdit(tab, deleteNode(tab.content, id));
-                    tab.selectedFlowNodeId = null;
+                    tab.selectedFlowNodeIds = [];
                     void refresh(true);
                 },
             });
@@ -698,7 +712,14 @@ export class TabManager {
         this.flowRefresh = refresh;
 
         canvas.addEventListener("click", (e) => {
-            tab.selectedFlowNodeId = flowNodeIdFromEvent(e); // 빈 곳을 누르면 선택 해제
+            const id = flowNodeIdFromEvent(e);
+            if (id === null) tab.selectedFlowNodeIds = []; // 빈 곳을 누르면 선택 해제
+            else if (e.ctrlKey || e.metaKey) {
+                // Ctrl+클릭으로 묶을 노드를 더하고 뺀다.
+                const at = tab.selectedFlowNodeIds.indexOf(id);
+                if (at === -1) tab.selectedFlowNodeIds.push(id);
+                else tab.selectedFlowNodeIds.splice(at, 1);
+            } else tab.selectedFlowNodeIds = [id];
             void refresh(false);
         });
         await refresh(true);
@@ -717,6 +738,84 @@ export class TabManager {
             logError(`흐름도 렌더링 실패: ${tab.path}`, err);
             canvas.innerHTML = `<div class="viewer-empty">⚠️ 흐름도를 그리는 중 오류가 발생했습니다. 텍스트 편집으로 확인하세요.</div>`;
         }
+    }
+
+    /**
+     * 고른 노드들을 새 FLOW로 떼어낸다 — 파일을 만들고, 부모에는 `[[ ]]` 한 칸만 남긴다.
+     * 이름을 비워두면 만들지 않는다(파일명이 되는 값이라 물어보는 편이 낫다).
+     */
+    private async groupSelection(tab: Tab, name: string, refresh: (redraw: boolean) => Promise<void>): Promise<void> {
+        const ids = new Set(tab.selectedFlowNodeIds);
+        const doc = parseFlow(tab.content);
+        const boundary = groupBoundary(doc, ids);
+        if (boundary.problem) {
+            alert(boundary.problem);
+            return;
+        }
+        const trimmed = name.trim() || prompt("새 하위 흐름 이름:")?.trim() || "";
+        if (!trimmed) return;
+
+        let path: string;
+        try {
+            path = await createElement("FLOW", trimmed);
+        } catch (err) {
+            logError("하위 흐름 생성 실패", err);
+            alert(`생성 실패: ${err instanceof Error ? err.message : String(err)}`);
+            return;
+        }
+        const childFilename = path.split("/").pop()!;
+        const newId = nextNodeId(doc, "subflow");
+        const result = groupIntoSubflow(tab.content, ids, {
+            newId,
+            name: trimmed,
+            childFilename,
+            parentFilename: fileNameOf(tab.path),
+        });
+        if (!result) {
+            alert("묶는 중 문제가 생겨 중단했습니다. 그림을 확인해 주세요.");
+            return;
+        }
+
+        try {
+            await writeProjectFile(path, result.child);
+        } catch (err) {
+            logError(`하위 흐름 저장 실패: ${path}`, err);
+            alert("하위 흐름 파일을 저장하지 못했습니다.");
+            return;
+        }
+        this.applyFlowEdit(tab, result.parent);
+        tab.selectedFlowNodeIds = [newId];
+        await refresh(true);
+        this.onTreeChanged?.();
+        logInfo(`하위 흐름으로 묶음: ${[...ids].join(", ")} → ${path}`);
+    }
+
+    /** 하위 흐름을 부모 안으로 도로 펼친다. 자식 파일은 지우지 않고 연결만 끊는다. */
+    private async ungroupNode(tab: Tab, id: string, refresh: (redraw: boolean) => Promise<void>): Promise<void> {
+        const doc = parseFlow(tab.content);
+        const ref = doc.nodes.find((n) => n.id === id)?.ref;
+        if (!ref) return;
+        if (!confirm(`"${ref}"의 내용을 이 그림 안으로 펼쳐 넣습니다. 자식 파일은 지우지 않고 연결만 끊습니다. 계속할까요?`)) {
+            return;
+        }
+
+        let childRaw: string;
+        try {
+            childRaw = await readProjectFile(`.loadstar/FLOW/${ref}`);
+        } catch (err) {
+            logError(`하위 흐름 읽기 실패: ${ref}`, err);
+            alert("하위 흐름 파일을 읽지 못했습니다.");
+            return;
+        }
+        const next = ungroupSubflow(tab.content, id, childRaw);
+        if (!next) {
+            alert("하위 흐름의 시작이나 끝이 하나로 정해지지 않아 펼칠 수 없습니다.");
+            return;
+        }
+        this.applyFlowEdit(tab, next);
+        tab.selectedFlowNodeIds = [];
+        await refresh(true);
+        logInfo(`하위 흐름 풀기: ${id} (${ref})`);
     }
 
     /** 그림 편집 한 번 = 되돌리기 한 칸. 내용이 그대로면 아무 일도 하지 않는다. */

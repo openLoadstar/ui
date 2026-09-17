@@ -35,7 +35,7 @@ function shapeOptions(selected: FlowShape): string {
  * 노드마다 리스너를 달면 호출할 때마다 중복으로 쌓인다. 클릭은 호출하는 쪽이
  * 컨테이너에 위임 리스너 하나로 처리하고, 여기서 심은 `data-flow-id`를 읽는다.
  */
-export function markFlowNodes(container: HTMLElement, doc: FlowDoc, selectedId: string | null): void {
+export function markFlowNodes(container: HTMLElement, doc: FlowDoc, selectedIds: ReadonlySet<string>): void {
     const byId = new Map(doc.nodes.map((n) => [n.id, n]));
     for (const g of Array.from(container.querySelectorAll<SVGGElement>("g.node"))) {
         const id = SVG_NODE_ID.exec(g.id)?.[1];
@@ -45,7 +45,7 @@ export function markFlowNodes(container: HTMLElement, doc: FlowDoc, selectedId: 
         g.setAttribute("data-flow-id", id);
         g.classList.add("flow-node");
         g.classList.toggle("flow-node--linked", node.ref !== null);
-        g.classList.toggle("flow-node--selected", selectedId === id);
+        g.classList.toggle("flow-node--selected", selectedIds.has(id));
     }
 }
 
@@ -72,6 +72,8 @@ async function loadLinkCandidates(): Promise<{ filename: string; format: Element
 
 export interface FlowPanelOptions {
     doc: FlowDoc;
+    /** 선택된 노드들(고른 순서). 마지막 것이 속성 편집 대상이다. */
+    selectedNodes: FlowNode[];
     selected: FlowNode | null;
     /** 선택 노드의 연결을 바꾼다(null이면 해제). */
     onLink: (id: string, filename: string | null) => void;
@@ -103,6 +105,12 @@ export interface FlowPanelOptions {
     onEdgeDelete: (line: number) => void;
     /** 간선별 조건 라벨(줄 번호 → 라벨) — 원문에서 읽어 넘긴다. */
     edgeLabels?: Map<number, string>;
+    /** 묶을 수 없는 이유(`groupBoundary`). null이면 묶어도 된다. */
+    groupProblem: string | null;
+    /** 고른 노드들을 새 하위 흐름으로 묶는다. */
+    onGroup: (name: string) => void;
+    /** 하위 흐름 노드를 부모 안으로 도로 펼친다. */
+    onUngroup: (id: string) => void;
     /** 방금 노드를 만든 직후인지 — 임시 라벨을 바로 고쳐 쓰도록 입력칸에 포커스를 준다. */
     focusLabel?: boolean;
 }
@@ -111,6 +119,21 @@ export interface FlowPanelOptions {
 export function renderFlowPanel(container: HTMLElement, opts: FlowPanelOptions): void {
     const { doc, selected } = opts;
     container.innerHTML = "";
+
+    // 여러 개를 골랐을 땐 속성 편집이 의미가 없다 — 묶기만 내놓는다.
+    if (opts.selectedNodes.length >= 2) {
+        const box = document.createElement("div");
+        box.className = "flow-panel-section";
+        box.innerHTML = `<div class="flow-panel-label">선택 ${opts.selectedNodes.length}개</div>`;
+        const list = document.createElement("div");
+        list.className = "flow-panel-nodelabel";
+        list.textContent = opts.selectedNodes.map((n) => n.label || n.id).join(", ");
+        box.appendChild(list);
+        container.appendChild(box);
+        renderSubflowSection(container, opts);
+        renderOrphanWarning(container, doc);
+        return;
+    }
 
     if (!selected) {
         const hint = document.createElement("div");
@@ -129,6 +152,7 @@ export function renderFlowPanel(container: HTMLElement, opts: FlowPanelOptions):
     }
     renderEdges(container, opts, selected);
     renderStructure(container, opts, selected);
+    renderSubflowSection(container, opts);
     renderRefSection(container, opts, selected);
     renderOrphanWarning(container, doc);
 }
@@ -270,6 +294,57 @@ function renderStructure(container: HTMLElement, opts: FlowPanelOptions, selecte
         if (connectSel.value) opts.onConnect(selected.id, connectSel.value);
     });
     box.querySelector('[data-role="delete"]')!.addEventListener("click", () => opts.onDelete(selected.id));
+}
+
+/**
+ * 하위 흐름 묶기·풀기.
+ *
+ * 묶기는 고른 노드들을 새 FLOW로 떼어내고, 풀기는 그 반대다. 둘을 짝으로 두는
+ * 이유: 되돌릴 수 없는 구조 변경은 쓰기 무섭다.
+ */
+function renderSubflowSection(container: HTMLElement, opts: FlowPanelOptions): void {
+    const locked = opts.doc.structureLock !== null;
+    const one = opts.selectedNodes.length === 1 ? opts.selectedNodes[0] : null;
+    const isSubflow = one?.ref != null && one.ref.startsWith("[FLOW]");
+
+    const box = document.createElement("div");
+    box.className = "flow-panel-section";
+    box.innerHTML = `<div class="flow-panel-label">하위 흐름</div>`;
+    container.appendChild(box);
+
+    if (isSubflow && one) {
+        const btn = document.createElement("button");
+        btn.className = "tb-btn";
+        btn.textContent = "↧ 하위 흐름 풀기";
+        btn.title = "이 하위 흐름의 내용을 여기로 펼쳐 넣는다(자식 파일은 남는다)";
+        btn.disabled = locked;
+        btn.addEventListener("click", () => opts.onUngroup(one.id));
+        box.appendChild(btn);
+        return;
+    }
+
+    const form = document.createElement("div");
+    form.className = "flow-field";
+    form.innerHTML = `
+        <input class="flow-input" data-role="group-name" placeholder="새 하위 흐름 이름" spellcheck="false" />
+        <button class="tb-btn flow-edge-btn" data-role="group" title="고른 노드들을 하위 흐름으로 묶는다">⊞</button>
+    `;
+    box.appendChild(form);
+
+    const nameInput = form.querySelector<HTMLInputElement>('[data-role="group-name"]')!;
+    const button = form.querySelector<HTMLButtonElement>('[data-role="group"]')!;
+    const problem = opts.groupProblem;
+    for (const el of [nameInput, button]) {
+        el.disabled = locked || problem !== null;
+        if (locked) el.title = opts.doc.structureLock!;
+    }
+    if (problem) {
+        const note = document.createElement("div");
+        note.className = "flow-panel-lock";
+        note.textContent = problem;
+        box.appendChild(note);
+    }
+    button.addEventListener("click", () => opts.onGroup(nameInput.value.trim()));
 }
 
 /** 노드에 붙은 화살표들 — 조건 라벨 수정, 그 갈래에만 끼워 넣기, 갈래 추가·삭제. */

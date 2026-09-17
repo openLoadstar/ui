@@ -58,7 +58,7 @@ const NODE_EXPR = String.raw`[A-Za-z_]\w*(?:${SHAPE_PART})?`;
 const ARROW_PART = String.raw`(?:--\s[^|>]*?\s-{2,3}>|-{2,3}>\|[^|]*\||-\.->|-\.-|={2,3}>?|-{2,3}[>ox]?)`;
 
 const EDGE_LINE = new RegExp(String.raw`^(\s*)(${NODE_EXPR})\s*(${ARROW_PART})\s*(${NODE_EXPR})\s*$`);
-const NODE_LINE = new RegExp(String.raw`^(\s*)(${NODE_EXPR})\s*$`);
+export const NODE_LINE = new RegExp(String.raw`^(\s*)(${NODE_EXPR})\s*$`);
 const NODE_DEF_PARTS = new RegExp(String.raw`^([A-Za-z_]\w*)(${SHAPE_PART})?$`);
 // 줄 안의 모든 노드 정의를 훑을 때 쓰는 전역 패턴(그룹으로 도형을 구분한다).
 const NODE_DEF_SCAN = /([A-Za-z_][\w]*)(?:\(\((.*?)\)\)|\[\[(.*?)\]\]|\[\((.*?)\)\]|\{(.*?)\}|\[(.*?)\])/g;
@@ -159,7 +159,8 @@ function diagramRange(lines: string[]): { start: number; end: number } | null {
     return null;
 }
 
-function parseReferences(lines: string[]): Map<string, string> {
+/** `### REFERENCES`를 `노드id → 파일명`으로 읽는다. */
+export function parseReferences(lines: string[]): Map<string, string> {
     const refs = new Map<string, string>();
     const section = sectionRange(lines, "REFERENCES");
     if (!section) return refs;
@@ -307,20 +308,22 @@ export function nextNodeId(doc: FlowDoc, shape: FlowShape): string {
     }
 }
 
-interface EditContext {
+export interface EditContext {
     newline: string;
     lines: string[];
     range: { start: number; end: number };
 }
 
-function openEdit(raw: string): EditContext | null {
+/** 편집용 컨텍스트 — 원문 줄들과 DIAGRAM 코드블록 범위. */
+export function openEdit(raw: string): EditContext | null {
     const newline = raw.includes("\r\n") ? "\r\n" : "\n";
     const lines = raw.split(/\r?\n/);
     const range = diagramRange(lines);
     return range ? { newline, lines, range } : null;
 }
 
-function indentOf(lines: string[], range: { start: number; end: number }): string {
+/** 그림 안에서 쓰이는 들여쓰기 — 새로 넣는 줄을 주변과 맞추기 위해. */
+export function indentOf(lines: string[], range: { start: number; end: number }): string {
     for (let i = range.start; i < range.end; i++) {
         const m = /^(\s+)\S/.exec(lines[i]);
         if (m) return m[1];
@@ -431,7 +434,7 @@ export function deleteNode(raw: string, id: string): string {
 }
 
 /** 도형이 붙은 노드 표현을 id별로 모은다(첫 정의 기준). */
-function collectDefinitions(lines: string[], range: { start: number; end: number }): Map<string, string> {
+export function collectDefinitions(lines: string[], range: { start: number; end: number }): Map<string, string> {
     const defs = new Map<string, string>();
     const remember = (expr: string) => {
         const parts = NODE_DEF_PARTS.exec(expr);
@@ -454,7 +457,7 @@ function collectDefinitions(lines: string[], range: { start: number; end: number
  * 줄이 지워지면서 정의를 잃은 노드에게 정의를 돌려준다 — 여전히 그림에
  * 등장하는데 도형이 사라진 노드가 대상이다(등장 자체가 없으면 놔둔다).
  */
-function restoreDefinitions(lines: string[], defs: Map<string, string>, skipId?: string): void {
+export function restoreDefinitions(lines: string[], defs: Map<string, string>, skipId?: string): void {
     const range = diagramRange(lines);
     if (!range) return;
 
