@@ -94,6 +94,12 @@ interface Tab {
      * 보던 배율이 유지된다(diagramZoom.ts).
      */
     diagramZoom: number;
+    /**
+     * 보던 스크롤 위치. 탭을 그릴 때마다 화면을 통째로 다시 만들기 때문에,
+     * 여기에 갈무리해 두지 않으면 다른 탭에 갔다 오는 것만으로 맨 위로 돌아간다.
+     */
+    scrollTop: number;
+    scrollLeft: number;
 }
 
 const NL = String.fromCharCode(10);
@@ -108,6 +114,8 @@ function fileNameOf(path: string): string {
 export class TabManager {
     private tabs: Tab[] = [];
     private activeId: string | null = null;
+    /** 지금 화면에 그려져 있는 탭 — 다시 그리기 직전에 그 탭의 스크롤을 갈무리하려고 둔다. */
+    private renderedTabId: string | null = null;
     private tabScrollEl: HTMLElement;
     /** 지금 열려 있는 그림 편집 화면을 다시 그리는 함수(되돌리기에서 재사용). */
     private flowRefresh: ((redraw: boolean) => Promise<void>) | null = null;
@@ -198,6 +206,8 @@ export class TabManager {
             collapsedGroups: new Set<string>(),
             flowUndo: [],
             diagramZoom: ZOOM_FIT,
+            scrollTop: 0,
+            scrollLeft: 0,
         };
         this.tabs.push(tab);
         this.activeId = tab.id;
@@ -245,6 +255,8 @@ export class TabManager {
             collapsedGroups: new Set<string>(),
             flowUndo: [],
             diagramZoom: ZOOM_FIT,
+            scrollTop: 0,
+            scrollLeft: 0,
         };
         this.tabs.push(tab);
         this.activeId = tab.id;
@@ -390,11 +402,32 @@ export class TabManager {
         activeEl?.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
 
+    /**
+     * 실제로 스크롤되는 곳은 모드마다 다르다 — 보기는 본문, 텍스트 편집은 textarea,
+     * 그림 편집은 캔버스. 어느 쪽이든 하나뿐이라 먼저 잡히는 것을 쓴다.
+     */
+    private scrollerEl(): HTMLElement | null {
+        const body = this.contentEl.querySelector<HTMLElement>(".viewer-body");
+        if (!body) return null;
+        return body.querySelector<HTMLElement>(".editor-textarea, .flow-canvas") ?? body;
+    }
+
+    /** 화면을 새로 만들기 전에, 지금 그려져 있는 탭이 어디를 보고 있었는지 적어 둔다. */
+    private saveScroll(): void {
+        const shown = this.tabs.find((t) => t.id === this.renderedTabId);
+        const el = this.scrollerEl();
+        if (!shown || !el) return;
+        shown.scrollTop = el.scrollTop;
+        shown.scrollLeft = el.scrollLeft;
+    }
+
     private async renderActive(): Promise<void> {
+        this.saveScroll();
         this.renderTabBar();
         this.flowRefresh = null; // 이전 그림 편집 화면의 DOM을 붙잡고 있지 않도록
 
         const tab = this.activeTab();
+        this.renderedTabId = tab ? tab.id : null;
         if (!tab) {
             this.findBar.close();
             this.contentEl.innerHTML = `<div class="viewer-empty">좌측 트리에서 항목을 선택하세요</div>`;
@@ -509,6 +542,13 @@ export class TabManager {
                 logError(`렌더링 실패: ${tab.path}`, err);
                 viewerEl.innerHTML = `<div class="viewer-empty">⚠️ 렌더링 중 오류가 발생했습니다. 콘솔/로그를 확인하세요.</div>`;
             }
+        }
+
+        // 보던 자리로 되돌린다. 그림(mermaid)까지 다 그린 뒤라야 높이가 확정돼 자리가 맞는다.
+        const scroller = this.scrollerEl();
+        if (scroller) {
+            scroller.scrollTop = tab.scrollTop;
+            scroller.scrollLeft = tab.scrollLeft;
         }
 
         // 탭 내용이 통째로 다시 그려졌으므로, 열려 있던 찾기 바를 새 DOM에 다시 붙인다.

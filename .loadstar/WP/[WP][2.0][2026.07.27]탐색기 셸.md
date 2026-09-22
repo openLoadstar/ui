@@ -34,9 +34,12 @@
 - [x] 좌측 트리 상단 — 업데이트 버튼 + 마지막 업데이트 시각. 클릭 시 트리 재구성(`buildProjectTree`) + 열린 탭 재조회(`TabManager.refreshAll`, dirty 탭은 덮어쓰지 않고 건너뜀). 그룹 편집기에서 변경이 있을 때도 같은 경로로 자동 갱신됨
 - [x] 탭 오버플로우 — 탭이 넘칠 때 네이티브 가로 스크롤바 대신 좌우 ‹›버튼(넘칠 때만 노출, 끝에서 비활성화). 활성 탭이 화면 밖이면 자동으로 스크롤해 보여줌
 - [x] 2026-08-04 좌측 트리 WP 항목에 STATUS 색상 점 표시 + 툴바 우측 상태 필터 체크박스(대기/진행중/종료/검토/제외 5개, 초기 전체 선택). S_ERR은 별도 체크박스 없이 검토(S_REV)와 같은 색으로 합쳐서 취급. 체크 해제 시 해당 상태의 WP를 트리에서 숨김(GROUP/DWP/OTHER 노드와 STATUS 없는 WP는 필터 영향 없이 항상 표시) — `frontend/src/wpStatus.ts`(라벨·색상·파싱), `projectTree.ts`(WP 경로별 STATUS 조회 후 부착), `tree.ts`(점 렌더링 + `filterTreeByStatus`)
+- [x] 2026-09-22 탭을 옮겼다 돌아오면 보던 위치가 맨 위로 돌아가던 것(사용자 보고) — `renderActive()`가 `contentEl`을 통째로 다시 만들어 `.viewer-body`가 새 요소가 되는 탓. `Tab.scrollTop`/`scrollLeft`에 갈무리했다가 되돌린다(`saveScroll`/`scrollerEl`). 모드 전환·하위 흐름 접기·버전 선택도 같은 경로를 타서 함께 유지된다
 
 ### ISSUE
-(없음)
+- 스크롤 갈무리는 **다시 그리기 직전**에 해야 한다 — `activate()`가 `activeId`를 먼저 바꾸기 때문에, 그 시점엔 화면에 남아 있는 DOM이 어느 탭 것인지 알 수 없다. `renderedTabId`로 "지금 그려져 있는 탭"을 따로 들고 있다가 `renderActive()` 첫머리에서 갈무리한다.
+- 되돌리기는 mermaid까지 다 그린 뒤라야 한다 — 그림이 빠진 상태에서는 문서 높이가 모자라 스크롤이 잘린다. 이미지(`<img>`)는 더 늦게 도착해 높이를 또 늘리므로 이미지가 많은 문서는 여전히 어긋날 수 있다. 되돌린 뒤 다시 맞추는 방법이 있지만, 사용자가 이미 스크롤한 뒤에 끌려가는 쪽이 더 불쾌해서 두지 않았다.
+- 실제로 스크롤되는 요소가 모드마다 다르다 — 보기는 `.viewer-body`, 텍스트 편집은 `.editor-textarea`, 그림 편집은 `.flow-canvas`(`scrollerEl`).
 
 ### COMMENT (탭 오버플로우 관련 추가)
 - `.tab-scroll`에 CSS `scroll-behavior: smooth`를 걸어뒀더니 `scrollLeft` 대입/`scrollBy`/`wheel` 이벤트로 스크롤 위치를 바꿔도 전혀 반영되지 않는 문제를 겪음(브라우저 프리뷰로 재현·격리 확인 — 최소 재현 테스트에선 문제없다가, 실제 앱 DOM에 `scroll-behavior:smooth`를 얹은 클론에서만 재현됨). 원인 특정은 못 했지만(WebView 환경별 스크롤 스로틀링 추정), CSS 레벨 smooth를 빼고 필요할 때만 JS `scrollBy()` 호출에서 개별적으로 다루는 쪽으로 우회함 — 지금은 버튼 클릭 시 즉시 이동(애니메이션 없음)으로 처리, 버튼 활성/비활성 상태도 애니메이션 타이밍에 기대지 않고 스크롤 직후 바로 갱신하도록 함.
