@@ -515,6 +515,19 @@ body.resizing-col {
     flex-shrink: 0;
 }
 
+/* 이동 이력 — 탭 띠의 ‹ › (탭 넘침 스크롤)와 섞이지 않게 글자와 줄을 달리한다. */
+.nav-btn {
+    min-width: 28px;
+    padding: 2px 6px;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.nav-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
 .viewer-path {
     color: var(--text-dim);
     font-size: 12px;

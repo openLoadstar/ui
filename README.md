@@ -96,6 +96,10 @@ Every element tab has a version combo box: pick a commit and the viewer renders 
 
 ![Git history](docs/images/git-history.png)
 
+### Going back — `Alt+←` / `Alt+→`
+
+The `←` `→` pair at the left of the viewer toolbar retraces where you have been, Eclipse style — useful once a flow node has sent you off into a WP and that WP into another. A step is a file together with where you were reading it, so coming back lands you at the paragraph you left, and a file you have since closed is reopened to get there. (The `‹ ›` in the tab strip are a different thing: they scroll the strip when tabs overflow.)
+
 ### Find in the open document — `Ctrl+F`
 
 Every match is highlighted in inverted colors, the current one in the accent color, with a match counter and next/previous navigation (`Enter` / `Shift+Enter`, `F3` / `Shift+F3`). Works in edit mode too, and never touches the text inside a rendered Mermaid diagram.
@@ -149,6 +153,7 @@ The GUI and the CLI share the same scaffolding and indexing code, so the two can
 | `Enter` / `Shift+Enter` | Next / previous match (in the find box) |
 | `F3` / `Shift+F3` | Next / previous match (anywhere) |
 | `Esc` | Close the find bar |
+| `Alt+←` / `Alt+→` | Back / forward through where you have been |
 
 ## 📁 Where things live
 

@@ -454,6 +454,12 @@ function startExplorer(projectRoot: string): void {
             if (tabs.undoFlowEdit()) e.preventDefault();
             return;
         }
+        // 이동 이력 — 웹뷰가 Alt+←를 브라우저 뒤로가기로 먹기 때문에 반드시 막는다.
+        if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+            e.preventDefault();
+            void (e.key === "ArrowLeft" ? tabs.goBack() : tabs.goForward());
+            return;
+        }
         if (e.key === "F3") {
             e.preventDefault();
             tabs.findNext(e.shiftKey ? -1 : 1);

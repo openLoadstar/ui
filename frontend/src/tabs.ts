@@ -104,6 +104,23 @@ interface Tab {
 
 const NL = String.fromCharCode(10);
 
+/**
+ * 이동 이력 한 걸음 — 어느 파일을 어디까지 보고 있었는가.
+ *
+ * 탭 id가 아니라 경로로 적는다. 탭을 닫으면 id는 사라지지만 뒤로 가면 그 파일을
+ * 다시 열어줘야 하기 때문이다(이클립스와 같은 동작).
+ */
+interface NavEntry {
+    path: string;
+    name: string;
+    format: ElementFormat | "EXTERNAL";
+    scrollTop: number;
+    scrollLeft: number;
+}
+
+/** 이력 깊이 — 이 정도면 한 세션에서 되짚을 만큼은 된다. */
+const NAV_LIMIT = 50;
+
 /** 그림 편집 되돌리기 깊이 — 더 필요하면 늘리면 되지만, 저장 전 텍스트 모드가 최종 안전망이다. */
 const FLOW_UNDO_LIMIT = 30;
 
@@ -116,6 +133,11 @@ export class TabManager {
     private activeId: string | null = null;
     /** 지금 화면에 그려져 있는 탭 — 다시 그리기 직전에 그 탭의 스크롤을 갈무리하려고 둔다. */
     private renderedTabId: string | null = null;
+    /** 이동 이력과 그 안에서 지금 서 있는 자리. 뒤로/앞으로는 이 자리를 옮긴다. */
+    private navStack: NavEntry[] = [];
+    private navIndex = -1;
+    /** 뒤로/앞으로 이동하는 중 — 그 이동 자체는 이력에 쌓지 않는다. */
+    private navigating = false;
     private tabScrollEl: HTMLElement;
     /** 지금 열려 있는 그림 편집 화면을 다시 그리는 함수(되돌리기에서 재사용). */
     private flowRefresh: ((redraw: boolean) => Promise<void>) | null = null;
@@ -421,13 +443,103 @@ export class TabManager {
         shown.scrollLeft = el.scrollLeft;
     }
 
+    /**
+     * 한 걸음 쌓는다. 탭이 바뀔 때만 부른다 — 모드 전환이나 하위 흐름 접기는
+     * 보던 자리가 그대로라 걸음이 아니다.
+     */
+    private pushNav(tab: Tab): void {
+        if (this.navigating) return;
+        const here = this.navStack[this.navIndex];
+        if (here) {
+            // 떠나기 직전 위치를 그 걸음에 적어 둔다 — 돌아왔을 때 그 자리로 간다.
+            const leaving = this.tabs.find((t) => t.path === here.path);
+            if (leaving) {
+                here.scrollTop = leaving.scrollTop;
+                here.scrollLeft = leaving.scrollLeft;
+            }
+            if (here.path === tab.path) return;
+        }
+        this.navStack.length = this.navIndex + 1; // 새로 움직이면 앞으로 갈 길은 끊긴다
+        this.navStack.push({
+            path: tab.path,
+            name: tab.title,
+            format: tab.format,
+            scrollTop: tab.scrollTop,
+            scrollLeft: tab.scrollLeft,
+        });
+        if (this.navStack.length > NAV_LIMIT) this.navStack.shift();
+        this.navIndex = this.navStack.length - 1;
+    }
+
+    canGoBack(): boolean {
+        return this.navIndex > 0;
+    }
+
+    canGoForward(): boolean {
+        return this.navIndex >= 0 && this.navIndex < this.navStack.length - 1;
+    }
+
+    async goBack(): Promise<void> {
+        if (this.canGoBack()) await this.goToNav(this.navIndex - 1);
+    }
+
+    async goForward(): Promise<void> {
+        if (this.canGoForward()) await this.goToNav(this.navIndex + 1);
+    }
+
+    /** 이력의 index번째 자리로 간다. 그 파일의 탭을 닫았으면 다시 연다. */
+    private async goToNav(index: number): Promise<void> {
+        const entry = this.navStack[index];
+        if (!entry) return;
+
+        // 떠나는 자리의 위치를 먼저 적어 둔다 — 앞으로 가기로 돌아올 때 쓴다.
+        const here = this.navStack[this.navIndex];
+        const leaving = here ? this.tabs.find((t) => t.path === here.path) : undefined;
+        const live = this.scrollerEl();
+        if (here && leaving && live) {
+            here.scrollTop = live.scrollTop;
+            here.scrollLeft = live.scrollLeft;
+        }
+
+        this.navIndex = index;
+        this.navigating = true;
+        try {
+            const tab = this.tabs.find((t) => t.path === entry.path);
+            if (tab) {
+                tab.scrollTop = entry.scrollTop;
+                tab.scrollLeft = entry.scrollLeft;
+                this.activeId = tab.id;
+                await this.renderActive();
+                return;
+            }
+            if (entry.format === "EXTERNAL") await this.openExternal(entry.path);
+            else await this.open({ name: entry.name, format: entry.format, path: entry.path });
+
+            // 다시 연 탭은 맨 위부터 그려졌다 — 적어 둔 자리로 보낸다.
+            const reopened = this.activeTab();
+            const el = this.scrollerEl();
+            if (reopened) {
+                reopened.scrollTop = entry.scrollTop;
+                reopened.scrollLeft = entry.scrollLeft;
+            }
+            if (el) {
+                el.scrollTop = entry.scrollTop;
+                el.scrollLeft = entry.scrollLeft;
+            }
+        } finally {
+            this.navigating = false;
+        }
+    }
+
     private async renderActive(): Promise<void> {
         this.saveScroll();
         this.renderTabBar();
         this.flowRefresh = null; // 이전 그림 편집 화면의 DOM을 붙잡고 있지 않도록
 
         const tab = this.activeTab();
+        const switched = tab !== undefined && tab.id !== this.renderedTabId;
         this.renderedTabId = tab ? tab.id : null;
+        if (tab && switched) this.pushNav(tab);
         if (!tab) {
             this.findBar.close();
             this.contentEl.innerHTML = `<div class="viewer-empty">좌측 트리에서 항목을 선택하세요</div>`;
@@ -458,6 +570,8 @@ export class TabManager {
 
         this.contentEl.innerHTML = `
             <div class="viewer-toolbar">
+                <button class="tb-btn nav-btn" data-role="nav-back" title="이전 위치 (Alt+←)">←</button>
+                <button class="tb-btn nav-btn" data-role="nav-forward" title="다음 위치 (Alt+→)">→</button>
                 <span class="viewer-path"></span>
                 <span class="viewer-toolbar-spacer"></span>
                 ${historyControl}
@@ -466,6 +580,13 @@ export class TabManager {
             <div class="viewer-body"></div>
         `;
         this.contentEl.querySelector(".viewer-path")!.textContent = tab.path;
+
+        const backBtn = this.contentEl.querySelector<HTMLButtonElement>('[data-role="nav-back"]')!;
+        const forwardBtn = this.contentEl.querySelector<HTMLButtonElement>('[data-role="nav-forward"]')!;
+        backBtn.disabled = !this.canGoBack();
+        forwardBtn.disabled = !this.canGoForward();
+        backBtn.addEventListener("click", () => void this.goBack());
+        forwardBtn.addEventListener("click", () => void this.goForward());
 
         const historySelect = this.contentEl.querySelector<HTMLSelectElement>('[data-role="history"]');
         if (historySelect) {
