@@ -63,6 +63,9 @@ function startExplorer(projectRoot: string): void {
           <button class="tb-btn" data-role="new-group">+ GROUP</button>
           <button class="tb-btn" data-action="new-flow">+ FLOW</button>
           <button class="tb-btn" data-action="reindex">⟳ 재색인</button>
+          <span class="toolbar-divider"></span>
+          <button class="tb-btn nav-btn" data-role="nav-back" title="이전 위치 (Alt+←)">←</button>
+          <button class="tb-btn nav-btn" data-role="nav-forward" title="다음 위치 (Alt+→)">→</button>
           <div class="toolbar-spacer"></div>
           <select id="view-switcher" class="view-switcher"></select>
           <div id="view-filter-panel" class="status-filter"></div>
@@ -239,6 +242,16 @@ function startExplorer(projectRoot: string): void {
 
     document.querySelector<HTMLElement>('[data-action="reindex"]')!.addEventListener("click", () => {
         openReindexDialog({ onReindex: reindexProject });
+    });
+
+    // --- 이동 이력(`[WP][2.0][2026.07.27]탐색기 셸.md`) ---
+    const navBackBtn = document.querySelector<HTMLButtonElement>('[data-role="nav-back"]')!;
+    const navForwardBtn = document.querySelector<HTMLButtonElement>('[data-role="nav-forward"]')!;
+    navBackBtn.addEventListener("click", () => void tabs.goBack());
+    navForwardBtn.addEventListener("click", () => void tabs.goForward());
+    tabs.setNavListener((canBack, canForward) => {
+        navBackBtn.disabled = !canBack;
+        navForwardBtn.disabled = !canForward;
     });
 
     // --- WP/DWP 우클릭 메뉴(이름변경/삭제) ---

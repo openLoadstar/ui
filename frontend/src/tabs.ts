@@ -138,6 +138,11 @@ export class TabManager {
     private navIndex = -1;
     /** 뒤로/앞으로 이동하는 중 — 그 이동 자체는 이력에 쌓지 않는다. */
     private navigating = false;
+    /**
+     * 이동 버튼은 상단 툴바에 있다 — 탭과 함께 다시 그려지지 않으므로 갈 곳이
+     * 생기고 없어질 때마다 알려줘야 한다.
+     */
+    private onNavChanged?: (canBack: boolean, canForward: boolean) => void;
     private tabScrollEl: HTMLElement;
     /** 지금 열려 있는 그림 편집 화면을 다시 그리는 함수(되돌리기에서 재사용). */
     private flowRefresh: ((redraw: boolean) => Promise<void>) | null = null;
@@ -471,6 +476,12 @@ export class TabManager {
         this.navIndex = this.navStack.length - 1;
     }
 
+    /** 상단 툴바가 이동 버튼의 활성/비활성을 따라오게 한다. 등록 즉시 한 번 알린다. */
+    setNavListener(fn: (canBack: boolean, canForward: boolean) => void): void {
+        this.onNavChanged = fn;
+        fn(this.canGoBack(), this.canGoForward());
+    }
+
     canGoBack(): boolean {
         return this.navIndex > 0;
     }
@@ -540,6 +551,7 @@ export class TabManager {
         const switched = tab !== undefined && tab.id !== this.renderedTabId;
         this.renderedTabId = tab ? tab.id : null;
         if (tab && switched) this.pushNav(tab);
+        this.onNavChanged?.(this.canGoBack(), this.canGoForward());
         if (!tab) {
             this.findBar.close();
             this.contentEl.innerHTML = `<div class="viewer-empty">좌측 트리에서 항목을 선택하세요</div>`;
@@ -570,8 +582,6 @@ export class TabManager {
 
         this.contentEl.innerHTML = `
             <div class="viewer-toolbar">
-                <button class="tb-btn nav-btn" data-role="nav-back" title="이전 위치 (Alt+←)">←</button>
-                <button class="tb-btn nav-btn" data-role="nav-forward" title="다음 위치 (Alt+→)">→</button>
                 <span class="viewer-path"></span>
                 <span class="viewer-toolbar-spacer"></span>
                 ${historyControl}
@@ -580,13 +590,6 @@ export class TabManager {
             <div class="viewer-body"></div>
         `;
         this.contentEl.querySelector(".viewer-path")!.textContent = tab.path;
-
-        const backBtn = this.contentEl.querySelector<HTMLButtonElement>('[data-role="nav-back"]')!;
-        const forwardBtn = this.contentEl.querySelector<HTMLButtonElement>('[data-role="nav-forward"]')!;
-        backBtn.disabled = !this.canGoBack();
-        forwardBtn.disabled = !this.canGoForward();
-        backBtn.addEventListener("click", () => void this.goBack());
-        forwardBtn.addEventListener("click", () => void this.goForward());
 
         const historySelect = this.contentEl.querySelector<HTMLSelectElement>('[data-role="history"]');
         if (historySelect) {

@@ -98,7 +98,7 @@ Every element tab has a version combo box: pick a commit and the viewer renders 
 
 ### Going back — `Alt+←` / `Alt+→`
 
-The `←` `→` pair at the left of the viewer toolbar retraces where you have been, Eclipse style — useful once a flow node has sent you off into a WP and that WP into another. A step is a file together with where you were reading it, so coming back lands you at the paragraph you left, and a file you have since closed is reopened to get there. (The `‹ ›` in the tab strip are a different thing: they scroll the strip when tabs overflow.)
+The `←` `→` pair in the toolbar, just past **⟳ 재색인**, retraces where you have been, Eclipse style — useful once a flow node has sent you off into a WP and that WP into another. A step is a file together with where you were reading it, so coming back lands you at the paragraph you left, and a file you have since closed is reopened to get there. (The `‹ ›` in the tab strip are a different thing: they scroll the strip when tabs overflow.)
 
 ### Find in the open document — `Ctrl+F`
 

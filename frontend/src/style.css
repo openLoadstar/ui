@@ -121,6 +121,14 @@ html, body {
     flex: 1;
 }
 
+/* 만들기·재색인(프로젝트를 건드리는 것)과 이동(보기만 바꾸는 것)을 눈으로 가른다. */
+.toolbar-divider {
+    width: 1px;
+    align-self: stretch;
+    margin: 2px 2px;
+    background: var(--border);
+}
+
 .view-switcher {
     background: var(--bg);
     color: var(--text);
@@ -515,16 +523,18 @@ body.resizing-col {
     flex-shrink: 0;
 }
 
-/* 이동 이력 — 탭 띠의 ‹ › (탭 넘침 스크롤)와 섞이지 않게 글자와 줄을 달리한다. */
+/* 이동 이력 — 탭 띠의 ‹ › (탭 넘침 스크롤)와 섞이지 않게 글자를 달리한다. */
 .nav-btn {
-    min-width: 28px;
-    padding: 2px 6px;
-    font-size: 14px;
+    min-width: 30px;
+    padding: 3px 8px;
+    font-size: 15px;
     line-height: 1;
 }
 
+/* 갈 곳이 없을 때도 "저런 버튼이 있다"는 것은 보여야 한다 — 너무 지우면
+   파일을 처음 열었을 때 버튼이 있는 줄도 모르게 된다. */
 .nav-btn:disabled {
-    opacity: 0.35;
+    opacity: 0.5;
     cursor: default;
 }
 
